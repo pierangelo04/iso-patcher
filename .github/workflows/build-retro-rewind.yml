@@ -1,0 +1,173 @@
+name: Build & upload Retro Rewind ISO
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forza la ricompilazione anche senza aggiornamenti"
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-retro-rewind.yml"
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: Retro-Rewind-Team/iso-patcher
+  PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
+  PACK_VERSION_URL: https://update.rwfc.net/RetroRewind/RetroRewindVersion.txt
+  ISO_URL: https://archive.org/download/mario-kart_202107/MarioKart.iso
+  WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
+  STATE_FILE: runtime/state.txt
+  OUTPUT_NAME: MarioKart-RetroRewind-PAL.iso
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      rebuild: ${{ steps.check.outputs.rebuild }}
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+      pack_etag: ${{ steps.check.outputs.pack_etag }}
+      pack_version: ${{ steps.check.outputs.pack_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rileva aggiornamenti (patcher / pack)
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          UP_SHA=$(curl -fsSL "https://api.github.com/repos/$UPSTREAM_REPO/commits/main" | jq -r .sha)
+          ETAG=$(curl -sI -A "Mozilla/5.0" "$PACK_ZIP_URL" | grep -i '^etag:' | tr -d '\r' | awk '{print $2}')
+          VER=$(curl -fsSL "$PACK_VERSION_URL" | sed '/^$/d' | tail -n1 | awk '{print $1}')
+          LAST=$(cat "$STATE_FILE" 2>/dev/null || true)
+          FORCE="${{ github.event.inputs.force }}"
+
+          echo "upstream_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
+          echo "pack_etag=$ETAG" >> "$GITHUB_OUTPUT"
+          echo "pack_version=$VER" >> "$GITHUB_OUTPUT"
+
+          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "upstream=$UP_SHA pack=$ETAG" ]; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Rilevato un aggiornamento, ricompilo"
+              echo "- Patcher: \`$UP_SHA\`"
+              echo "- Pack Retro Rewind v$VER (e-tag \`$ETAG\`)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            echo "Nessun aggiornamento per patcher o pack, build saltata." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.rebuild == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Installa wit (Wiimms ISO Tools)
+        run: |
+          curl -fsSL -o /tmp/wit.tar.gz "$WIT_URL"
+          tar xzf /tmp/wit.tar.gz -C /tmp
+          sudo install -m755 /tmp/wit/bin/wit /tmp/wit/bin/wwt /tmp/wit/bin/wdf /usr/local/bin/ || true
+          sudo install -m755 /tmp/wit/bin/wit /usr/local/bin/wit
+          wit --version
+
+      - name: Prepara il patcher (updatedbuilder)
+        run: |
+          curl -fsSL -o /tmp/updatedbuilder.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
+          unzip -q -o /tmp/updatedbuilder.zip
+          chmod a+x *.sh
+
+      - name: Scarica il pack Retro Rewind (full)
+        run: |
+          curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
+          unzip -q RetroRewind.zip 'RetroRewind6/*'
+          rm -f RetroRewind.zip
+          du -sh RetroRewind6
+
+      - name: Scarica MarioKart.iso (PAL)
+        run: |
+          curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o MarioKart.iso "$ISO_URL"
+          ls -la MarioKart.iso
+
+      - name: Compila l'ISO patchata (PAL)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h .
+          # equivalente di create-rr-pal.sh (src RMCP01 -> dest RMCPTO, formato ISO)
+          rm -rf workdir.tmp
+          wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
+          test -d workdir.tmp
+          rm -f MarioKart.iso
+          ./copy-files.sh
+          rm -rf new-image
+          wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
+            --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
+            --name "Mario Kart Retro Rewind" --iso
+          find new-image -maxdepth 1 -name '*.iso' -exec mv {} "new-image/$OUTPUT_NAME" \;
+          ls -la new-image
+          df -h .
+
+      - name: Upload su MEGA - rimuovi vecchia versione (se esiste)
+        if: ${{ secrets.MEGA_USERNAME != '' }}
+        continue-on-error: true
+        uses: Difegue/action-megacmd@1.4.0
+        env:
+          USERNAME: ${{ secrets.MEGA_USERNAME }}
+          PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        with:
+          args: rm -f /RetroRewind/${{ env.OUTPUT_NAME }}
+
+      - name: Upload su MEGA - ISO
+        if: ${{ secrets.MEGA_USERNAME != '' }}
+        uses: Difegue/action-megacmd@1.4.0
+        env:
+          USERNAME: ${{ secrets.MEGA_USERNAME }}
+          PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        with:
+          args: put -c /github/workspace/new-image/${{ env.OUTPUT_NAME }} /RetroRewind/
+
+      - name: Aggiorna stato e sincronizza il fork
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          UP_SHA="${{ needs.check.outputs.upstream_sha }}"
+          ETAG="${{ needs.check.outputs.pack_etag }}"
+          curl -fsSL -o /tmp/updatedbuilder.new.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
+          if ! cmp -s /tmp/updatedbuilder.new.zip updatedbuilder.zip; then
+            cp /tmp/updatedbuilder.new.zip updatedbuilder.zip
+            echo "updatedbuilder.zip aggiornato dal repo upstream"
+          fi
+          mkdir -p runtime
+          printf 'upstream=%s pack=%s\n' "$UP_SHA" "$ETAG" > runtime/state.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updatedbuilder.zip runtime/state.txt
+          git diff --cached --quiet || git commit -m "sync: ageggio iso-patcher e stato pack $ETAG"
+          git push origin "$GITHUB_REF_NAME"
+
+      - name: Riepilogo
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Retro Rewind ISO build"
+            echo "- Pack: v${{ needs.check.outputs.pack_version }}"
+            echo "- Upstream iso-patcher: \`${{ needs.check.outputs.upstream_sha }}\`"
+            echo "- File caricato su MEGA: \`/RetroRewind/${{ env.OUTPUT_NAME }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
