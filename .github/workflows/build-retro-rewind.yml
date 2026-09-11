@@ -43,19 +43,32 @@ jobs:
       - name: Rileva aggiornamenti (patcher / pack)
         id: check
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          UP_SHA=$(curl -fsSL "https://api.github.com/repos/$UPSTREAM_REPO/commits/main" | jq -r .sha)
-          ETAG=$(curl -sI -A "Mozilla/5.0" "$PACK_ZIP_URL" | grep -i '^etag:' | tr -d '\r' | awk '{print $2}')
-          VER=$(curl -fsSL "$PACK_VERSION_URL" | sed '/^$/d' | tail -n1 | awk '{print $1}')
+          set -uo pipefail
+          UP_SHA=$(gh api "repos/$UPSTREAM_REPO/commits/main" --jq .sha 2>/dev/null \
+                   || curl -fsSL "https://api.github.com/repos/$UPSTREAM_REPO/commits/main" 2>/dev/null | jq -r .sha 2>/dev/null \
+                   || true)
+          ETAG=$(curl -sI -A "Mozilla/5.0" "$PACK_ZIP_URL" 2>/dev/null \
+                   | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{gsub(/"/,"",$2); print $2; exit}')
+          VER=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | sed '/^$/d' | tail -n1 | awk '{print $1}')
           LAST=$(cat "$STATE_FILE" 2>/dev/null || true)
           FORCE="${{ github.event.inputs.force }}"
+          ETAG=${ETAG:-no-etag}
+          VER=${VER:-unknown}
 
           echo "upstream_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
           echo "pack_etag=$ETAG" >> "$GITHUB_OUTPUT"
           echo "pack_version=$VER" >> "$GITHUB_OUTPUT"
 
-          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "upstream=$UP_SHA pack=$ETAG" ]; then
+          if [ -z "$UP_SHA" ]; then
+            echo "Impossibile contattare l'API di GitHub, controllo saltato." >> "$GITHUB_STEP_SUMMARY"
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$UP_SHA $ETAG" ]; then
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
             {
               echo "## Rilevato un aggiornamento, ricompilo"
@@ -166,7 +179,7 @@ jobs:
             echo "updatedbuilder.zip aggiornato dal repo upstream"
           fi
           mkdir -p runtime
-          printf 'upstream=%s pack=%s\n' "$UP_SHA" "$ETAG" > runtime/state.txt
+          printf '%s %s\n' "$UP_SHA" "$ETAG" > runtime/state.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add updatedbuilder.zip runtime/state.txt
