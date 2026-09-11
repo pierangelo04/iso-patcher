@@ -145,24 +145,14 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload su MEGA - rimuovi vecchia versione (se esiste)
-        if: steps.mega.outputs.enabled == 'true'
-        continue-on-error: true
-        uses: Difegue/action-megacmd@1.4.0
-        env:
-          USERNAME: ${{ secrets.MEGA_USERNAME }}
-          PASSWORD: ${{ secrets.MEGA_PASSWORD }}
-        with:
-          args: rm -f /RetroRewind/${{ env.OUTPUT_NAME }}
-
-      - name: Upload su MEGA - ISO
+      - name: Upload su MEGA
         if: steps.mega.outputs.enabled == 'true'
         uses: Difegue/action-megacmd@1.4.0
         env:
           USERNAME: ${{ secrets.MEGA_USERNAME }}
           PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         with:
-          args: put -c /github/workspace/new-image/${{ env.OUTPUT_NAME }} /RetroRewind/
+          args: rm -f /RetroRewind/${{ env.OUTPUT_NAME }} && put -c /github/workspace/new-image/${{ env.OUTPUT_NAME }} /RetroRewind/
 
       - name: Aggiorna stato e sincronizza il fork
         shell: bash
