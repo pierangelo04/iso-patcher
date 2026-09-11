@@ -80,8 +80,8 @@ jobs:
         run: |
           curl -fsSL -o /tmp/wit.tar.gz "$WIT_URL"
           tar xzf /tmp/wit.tar.gz -C /tmp
-          sudo install -m755 /tmp/wit/bin/wit /tmp/wit/bin/wwt /tmp/wit/bin/wdf /usr/local/bin/ || true
-          sudo install -m755 /tmp/wit/bin/wit /usr/local/bin/wit
+          WITDIR=$(ls -d /tmp/wit-v3.05a* | head -n1)
+          sudo install -m755 "$WITDIR/bin/wit" /usr/local/bin/wit
           wit --version
 
       - name: Prepara il patcher (updatedbuilder)
@@ -121,8 +121,20 @@ jobs:
           ls -la new-image
           df -h .
 
+      - name: Verifica credenziali MEGA
+        id: mega
+        shell: bash
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        run: |
+          if [ -n "$MEGA_USERNAME" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload su MEGA - rimuovi vecchia versione (se esiste)
-        if: ${{ secrets.MEGA_USERNAME != '' }}
+        if: steps.mega.outputs.enabled == 'true'
         continue-on-error: true
         uses: Difegue/action-megacmd@1.4.0
         env:
@@ -132,7 +144,7 @@ jobs:
           args: rm -f /RetroRewind/${{ env.OUTPUT_NAME }}
 
       - name: Upload su MEGA - ISO
-        if: ${{ secrets.MEGA_USERNAME != '' }}
+        if: steps.mega.outputs.enabled == 'true'
         uses: Difegue/action-megacmd@1.4.0
         env:
           USERNAME: ${{ secrets.MEGA_USERNAME }}
