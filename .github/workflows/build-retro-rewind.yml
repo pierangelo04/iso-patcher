@@ -34,7 +34,7 @@ jobs:
     outputs:
       rebuild: ${{ steps.check.outputs.rebuild }}
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
-      pack_etag: ${{ steps.check.outputs.pack_etag }}
+      pack_fp: ${{ steps.check.outputs.pack_fp }}
       pack_version: ${{ steps.check.outputs.pack_version }}
     steps:
       - name: Checkout
@@ -50,16 +50,15 @@ jobs:
           UP_SHA=$(gh api "repos/$UPSTREAM_REPO/commits/main" --jq .sha 2>/dev/null \
                    || curl -fsSL "https://api.github.com/repos/$UPSTREAM_REPO/commits/main" 2>/dev/null | jq -r .sha 2>/dev/null \
                    || true)
-          ETAG=$(curl -sI -A "Mozilla/5.0" "$PACK_ZIP_URL" 2>/dev/null \
-                   | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{gsub(/"/,"",$2); print $2; exit}')
+          PACK_FP=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | tr -d ' \t\r' | sort | sha256sum | awk '{print $1}')
           VER=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | sed '/^$/d' | tail -n1 | awk '{print $1}')
           LAST=$(cat "$STATE_FILE" 2>/dev/null || true)
           FORCE="${{ github.event.inputs.force }}"
-          ETAG=${ETAG:-no-etag}
+          PACK_FP=${PACK_FP:-no-ver}
           VER=${VER:-unknown}
 
           echo "upstream_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
-          echo "pack_etag=$ETAG" >> "$GITHUB_OUTPUT"
+          echo "pack_fp=$PACK_FP" >> "$GITHUB_OUTPUT"
           echo "pack_version=$VER" >> "$GITHUB_OUTPUT"
 
           if [ -z "$UP_SHA" ]; then
@@ -68,12 +67,12 @@ jobs:
             exit 0
           fi
 
-          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$UP_SHA $ETAG" ]; then
+          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$UP_SHA $PACK_FP" ]; then
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
             {
               echo "## Rilevato un aggiornamento, ricompilo"
               echo "- Patcher: \`$UP_SHA\`"
-              echo "- Pack Retro Rewind v$VER (e-tag \`$ETAG\`)"
+              echo "- Pack Retro Rewind v$VER (impronta \`${PACK_FP:0:8}\`)"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
@@ -172,18 +171,18 @@ jobs:
         run: |
           set -euo pipefail
           UP_SHA="${{ needs.check.outputs.upstream_sha }}"
-          ETAG="${{ needs.check.outputs.pack_etag }}"
+          PACK_FP="${{ needs.check.outputs.pack_fp }}"
           curl -fsSL -o /tmp/updatedbuilder.new.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
           if ! cmp -s /tmp/updatedbuilder.new.zip updatedbuilder.zip; then
             cp /tmp/updatedbuilder.new.zip updatedbuilder.zip
             echo "updatedbuilder.zip aggiornato dal repo upstream"
           fi
           mkdir -p runtime
-          printf '%s %s\n' "$UP_SHA" "$ETAG" > runtime/state.txt
+          printf '%s %s\n' "$UP_SHA" "$PACK_FP" > runtime/state.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add updatedbuilder.zip runtime/state.txt
-          git diff --cached --quiet || git commit -m "sync: ageggio iso-patcher e stato pack $ETAG"
+          git diff --cached --quiet || git commit -m "sync: ageggio iso-patcher e stato pack $PACK_FP"
           git push origin "$GITHUB_REF_NAME"
 
       - name: Riepilogo
