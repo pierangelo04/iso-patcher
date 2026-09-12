@@ -119,12 +119,11 @@ jobs:
         run: |
           set -euxo pipefail
           df -h .
-          # equivalente di create-rr-pal.sh (src RMCP01 -> dest RMCPTO, formato ISO)
           rm -rf workdir.tmp
-          # Estrai TUTTE le partizioni (data + boot) per poter sostituire il main.dol
+          # Estrai TUTTE le partizioni
           wit extract MarioKart.iso --DEST workdir.tmp --links --include RMCP01 -vv1 -F-.svn/
           test -d workdir.tmp
-          # Trova e sostituisci il main.dol con quello custom (patch per Retro Rewind server)
+          # Sostituisci il main.dol (patch server Retro Rewind)
           DOL=$(find workdir.tmp -name "main.dol" -path "*/sys/*" | head -n1)
           if [ -n "$DOL" ]; then
             echo "Sostituisco main.dol: $DOL"
@@ -134,6 +133,9 @@ jobs:
             find workdir.tmp -name "main.dol" -ls
             exit 1
           fi
+          # Riorganizza: sposta data files in workdir.tmp/files/ (come --psel data farebbe)
+          mv workdir.tmp/DATA/files workdir.tmp/files
+          rm -rf workdir.tmp/DATA
           rm -f MarioKart.iso
           ./copy-files.sh
           rm -rf new-image
