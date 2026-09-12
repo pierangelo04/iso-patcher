@@ -134,10 +134,12 @@ jobs:
             exit 1
           fi
           # Riorganizza: sposta data files in workdir.tmp/files/ (come --psel data farebbe)
+          mkdir -p workdir.tmp/sys
+          cp -f extra/Boot/Loaders/PAL/main.dol workdir.tmp/sys/main.dol
           mv workdir.tmp/DATA/files workdir.tmp/files
           rm -rf workdir.tmp/DATA
           rm -f MarioKart.iso
-          ./copy-files.sh
+          SRC_TYPE=PAL ./copy-files.sh
           rm -rf new-image
           wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
