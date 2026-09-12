@@ -121,8 +121,19 @@ jobs:
           df -h .
           # equivalente di create-rr-pal.sh (src RMCP01 -> dest RMCPTO, formato ISO)
           rm -rf workdir.tmp
-          wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
+          # Estrai TUTTE le partizioni (data + boot) per poter sostituire il main.dol
+          wit extract MarioKart.iso --DEST workdir.tmp --links --include RMCP01 -vv1 -F-.svn/
           test -d workdir.tmp
+          # Trova e sostituisci il main.dol con quello custom (patch per Retro Rewind server)
+          DOL=$(find workdir.tmp -name "main.dol" -path "*/sys/*" | head -n1)
+          if [ -n "$DOL" ]; then
+            echo "Sostituisco main.dol: $DOL"
+            cp -f extra/Boot/Loaders/EUR/main.dol "$DOL"
+          else
+            echo "ERRORE: main.dol non trovato!"
+            find workdir.tmp -name "main.dol" -ls
+            exit 1
+          fi
           rm -f MarioKart.iso
           ./copy-files.sh
           rm -rf new-image
