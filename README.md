@@ -2,6 +2,48 @@
 Kote's ISO patcher for Retro Rewind
 This will allows the user to patch Mario Kart Wii game back up to add the mod-pack "Retro Rewind" for use on USB Loader or Dolphin emulator.
 
+## Build automatica (GitHub Actions)
+
+Il workflow `.github/workflows/build-retro-rewind.yml` compila ogni giorno (se ci
+sono aggiornamenti di pack/builder) e a richiesta (`Actions > Run workflow >
+force: true`) DUE file dalla stessa build PAL (GameID `RMCPTO`, server RetroWFC):
+
+- `MarioKart-RetroRewind-PAL.iso` → **Dolphin** (PC/Mac/Android/iOS)
+- `RMCPTO.wbfs` → **Wii / Wii U (vWii)** via USB Loader GX / WiiFlow
+  (copiare in `/wbfs/RMCPTO.wbfs` sulla USB)
+
+I file finiscono come artifact della run e (se configurati i secret
+`MEGA_USERNAME`/`MEGA_PASSWORD`) nella cartella MEGA `/RetroRewind/`.
+La ISO base (`RMCP01` PAL) viene letta dalla cartella MEGA `/iso-originale/`.
+Il builder usato e' quello ufficiale aggiornato
+("Wiimm Edition for v6.12.5 and above", Kamek Loader v2), non quello obsoleto
+su GitHub che causava `FATAL ERROR: Incompatible file (version 2)`.
+
+## Uso su Dolphin
+
+1. Apri `MarioKart-RetroRewind-PAL.iso` con Dolphin.
+2. Disattiva i cheat: Config > Generale > togli "Enable Cheats".
+3. Non usare ISO patchate per Wiimmfi e non attivare Retro Achievements.
+4. Se vedi "invalid reads": Config > Avanzate > Emulated Memory Size Override,
+   alza solo MEM2 a 128 MB.
+5. Online = RetroWFC (niente VPN/Proxy/iCloud Private Relay); per problemi di
+   connessione vedi la wiki (errori 20103/20110/22010...).
+
+## Uso su Wii / Wii U (vWii)
+
+1. Copia `RMCPTO.wbfs` in `/wbfs/RMCPTO.wbfs` sulla USB
+   (se FAT32 e il file supera 4 GB, fallo convertire/splittare a
+   Wii Backup Manager / Tiny Wii Backup Manager).
+2. Installa il forwarder di Kote (http://bit.ly/3J4auhe) con un WAD manager.
+3. Nel loader: cheat e funzionalita' cheat DISATTIVATE, nessuna patch Wiimmfi.
+4. Avvia il loader dal System Menu (forwarder/canale), NON dall'Homebrew
+   Channel (resta codice in RAM e causa "Disable all cheatcodes").
+5. Se il forwarder torna al menu Wii: avvia prima il gioco normalmente dal
+   loader una volta, poi usa il forwarder.
+
+Limiti noti delle ISO patchate (uguali per Dolphin e Wii): le impostazioni non
+si salvano e cambiare lingua in gioco puo' crashare.
+
 Prerequisite are to have Wiimm ISO Tools installed before use and to suply the pack "Retro Rewind" and a copy of Mario Kart Wii as ISO or WBFS format.
 
 Instructions for use 
