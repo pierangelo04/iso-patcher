@@ -166,8 +166,9 @@ jobs:
         run: |
           curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o MarioKart.iso "$ISO_URL"
           ls -lh MarioKart.iso
-          wit info MarioKart.iso 2>&1 | head -n 30
-          wit info MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base non contiene RMCP01 (PAL). Verifica ISO_URL."; exit 1)
+          # NOTA: `wit INFO` stampa keywords interne, NON le ISO. Per le ISO usare LIST/ID6.
+          wit LIST MarioKart.iso 2>&1 | head -n 30
+          wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base non contiene RMCP01 (PAL). Verifica ISO_URL."; exit 1)
 
       - name: Compila l'ISO patchata (PAL -> loader EUR, RetroWFC)
         shell: bash
@@ -211,16 +212,17 @@ jobs:
           set -euxo pipefail
           ISO="new-image/$OUTPUT_NAME"
           test -f "$ISO"
-          wit info "$ISO" 2>&1 | tee /tmp/wit-info.txt
+          # NOTA: `wit INFO` non legge le ISO. LIST/ID6 si'.
+          wit LIST -l "$ISO" 2>&1 | tee /tmp/wit-info.txt
           grep -q "RMCPTO" /tmp/wit-info.txt || (echo "::error::GameID atteso RMCPTO non trovato"; exit 1)
           grep -q "Mario Kart Retro Rewind" /tmp/wit-info.txt || (echo "::error::Nome ISO atteso non trovato"; exit 1)
           echo "--- Filelist ISO (controllo Retro Rewind) ---"
-          wit files "$ISO" 2>&1 | tee /tmp/wit-files.txt | head -n 50
+          wit FILES "$ISO" 2>&1 | tee /tmp/wit-files.txt | head -n 50
           # La ISO deve contenere i file Pulsar/Retro (almeno Binaries + Course).
-          # `wit files` elenca i percorsi interni; accettiamo sia formati con
+          # `wit FILES` elenca i percorsi interni; accettiamo sia formati con
           # prefisso "/" sia senza.
           grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
-            || (echo "::warning::Code.pul non visibile in wit files, controllo con FILELIST"; wit file "$ISO" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella ISO finale"; exit 1))
+            || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$ISO" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella ISO finale"; exit 1))
           echo "OK: ISO $OUTPUT_NAME con ID RMCPTO, loader EUR e file Retro Rewind presenti."
           echo "Server online: RetroWFC (rwfc.net) via Pulsar. Nessuna patch Wiimmfi applicata in questo workflow."
           {
