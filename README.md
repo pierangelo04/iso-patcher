@@ -6,11 +6,12 @@ This will allows the user to patch Mario Kart Wii game back up to add the mod-pa
 
 Il workflow `.github/workflows/build-retro-rewind.yml` compila ogni giorno (se ci
 sono aggiornamenti di pack/builder) e a richiesta (`Actions > Run workflow >
-force: true`) DUE file dalla stessa build PAL (GameID `RMCPTO`, server RetroWFC):
+force: true`) UN unico file dalla build PAL (GameID `RMCPTO`, server RetroWFC),
+usabile sia su Dolphin (legge i .wbfs nativamente) sia su Wii:
 
-- `MarioKart-RetroRewind-PAL.iso` → **Dolphin** (PC/Mac/Android/iOS)
-- `RMCPTO.wbfs` → **Wii / Wii U (vWii)** via USB Loader GX / WiiFlow
-  (copiare in `/wbfs/RMCPTO.wbfs` sulla USB)
+- `RMCPTO.wbfs` → **Dolphin** (PC/Mac/Android/iOS): aprilo direttamente.
+- `RMCPTO.wbfs` → **Wii / Wii U (vWii)** via USB Loader GX / WiiFlow:
+  copiare in `/wbfs/RMCPTO.wbfs` sulla USB.
 
 I file finiscono come artifact della run e (se configurati i secret
 `MEGA_USERNAME`/`MEGA_PASSWORD`) nella cartella MEGA `/RetroRewind/`.
@@ -21,7 +22,7 @@ su GitHub che causava `FATAL ERROR: Incompatible file (version 2)`.
 
 ## Uso su Dolphin
 
-1. Apri `MarioKart-RetroRewind-PAL.iso` con Dolphin.
+1. Apri `RMCPTO.wbfs` con Dolphin (i .wbfs si aprono come le .iso).
 2. Disattiva i cheat: Config > Generale > togli "Enable Cheats".
 3. Non usare ISO patchate per Wiimmfi e non attivare Retro Achievements.
 4. Se vedi "invalid reads": Config > Avanzate > Emulated Memory Size Override,
