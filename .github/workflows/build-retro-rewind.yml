@@ -3,7 +3,8 @@ name: Build & upload Retro Rewind ISO
 # Workflow automatizzato per ISO Retro Rewind (RetroWFC, NON Wiimmfi).
 # Procedura manuale di riferimento (video https://www.youtube.com/watch?v=z5PW9iPkZfQ):
 #  1. scarica Retro Rewind full da wiki (rwfc.net) -> RetroRewind6/
-#  2. scarica ISO builder (updatedbuilder.zip da Retro-Rewind-Team/iso-patcher)
+#  2. scarica ISO builder "Wiimm Edition for v6.12.5 and above" dal link MEGA
+#     nella sidebar wiki (https://mkwiiki.org/wiki/Retro_Rewind)
 #  3. installa Wiimm ISO Tools (wit)
 #  4. metti Mario Kart Wii .iso/.wbfs nella stessa cartella
 #  5. lancia create-rr-pal.bat (PAL) / -usa / -jpn in base alla regione Wii
@@ -11,14 +12,23 @@ name: Build & upload Retro Rewind ISO
 #  7. installa il forwarder WAD di Kote3767 e avvia da System Menu (non da HBC)
 # Questo workflow replica gli stessi passi su ubuntu-latest per la regione PAL.
 #
-# FIX IMPORTANTE RetroWFC vs Wiimmfi (verificato sui log run 34715396539):
+# FIX 1 - RetroWFC vs Wiimmfi (verificato sui log run 34715396539):
 #  il log mostrava `cp: cannot stat './extra/Boot/Loaders/PAL/main.dol'`.
-#  copy-files.sh usa $SRC_TYPE per scegliere il loader, ma le cartelle sono
-#  EUR/USA/JPN (non PAL). I .bat usano BASEVER=EUR per PAL.
-#  Senza il loader EUR, l'ISO teneva il main.dol vanilla -> Pulsar/RetroWFC
-#  non partiva e l'USB Loader ripiegava sulla patch di default Wiimmfi.
-#  Fix: per PAL usare SRC_TYPE=EUR + verifica con `cmp` che il main.dol
-#  sia stato davvero sostituito. MAI usare `wit --patch-wiimmfi`.
+#  Il vecchio copy-files.sh di GitHub usava $SRC_TYPE per scegliere il loader,
+#  ma le cartelle sono EUR/USA/JPN (non PAL). Senza loader EUR, l'ISO teneva
+#  il main.dol vanilla -> Pulsar/RetroWFC non partiva e l'USB Loader ripiegava
+#  sulla patch di default Wiimmfi. MAI usare `wit --patch-wiimmfi`.
+#
+# FIX 2 - "FATAL ERROR: Incompatible file (version 2), please upgrade your
+#  Kamek Loader" su Dolphin (e Wii): il builder su GitHub
+#  (Retro-Rewind-Team/iso-patcher -> updatedbuilder.zip, 05/2026) contiene un
+#  main.dol con Kamek Loader vecchio, incompatibile con i .pul v2 del pack
+#  corrente. La wiki ufficiale dice di usare l'archivio
+#  "Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip" dal link
+#  MEGA (https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w), che contiene
+#  main.dol aggiornati (09/2026), SRC_TYPE=EUR per PAL, riga dolpatch
+#  `80005EFC=0000000A` e flag `--security-fix`.
+#  PERCIO' QUESTO WORKFLOW SCARICA IL BUILDER DA MEGA, NON DA GITHUB.
 
 on:
   schedule:
@@ -52,6 +62,16 @@ env:
   UPSTREAM_REPO: Retro-Rewind-Team/iso-patcher
   PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
   PACK_VERSION_URL: https://update.rwfc.net/RetroRewind/RetroRewindVersion.txt
+  # ISO builder UFFICIALE aggiornato (Kamek Loader v2, fix PAL->EUR):
+  # cartella MEGA pubblica linkata dalla wiki. Lo zip contiene
+  # "Retro Rewind ISO Builder/Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip".
+  BUILDER_MEGA_LINK: https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w
+  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip
+  BUILDER_SUBDIR: Retro Rewind ISO Builder
+  # md5 del main.dol EUR VECCHIO (GitHub 05/2026, Kamek v1): se il builder
+  # scaricato lo contiene ancora, la build deve fallire invece di produrre
+  # una ISO con "Incompatible file (version 2)".
+  OLD_LOADER_MD5_EUR: 5f8e596c3b500aaa267888f4c9ae3cd8
   # Base ISO PAL (deve contenere RMCP01). NON piu' da archive.org:
   # la ISO originale va caricata su MEGA nella cartella /iso-originale/
   # (es. /iso-originale/MarioKart.iso). Se MEGA_ISO_NAME e' vuoto,
@@ -70,16 +90,30 @@ jobs:
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
       pack_fp: ${{ steps.check.outputs.pack_fp }}
       pack_version: ${{ steps.check.outputs.pack_version }}
+      builder_fp: ${{ steps.check.outputs.builder_fp }}
       region: ${{ steps.check.outputs.region }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rileva aggiornamenti (patcher / pack)
+      - name: Installa MEGAcmd (per fingerprint builder)
+        shell: bash
+        run: |
+          if ! command -v mega-ls >/dev/null 2>&1; then
+            source /etc/os-release
+            DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+            wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+            sudo apt install -y "/tmp/${DEB}"
+          fi
+          mega-ls --version 2>&1 | head -n2 || true
+
+      - name: Rileva aggiornamenti (patcher / pack / builder)
         id: check
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
           set -uo pipefail
           UP_SHA=$(gh api "repos/$UPSTREAM_REPO/commits/main" --jq .sha 2>/dev/null \
@@ -87,6 +121,18 @@ jobs:
                    || true)
           PACK_FP=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | tr -d ' \t\r' | sort | sha256sum | awk '{print $1}')
           VER=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | sed '/^$/d' | tail -n1 | awk '{print $1}')
+          # Fingerprint del builder MEGA (listing nomi+date+dimesioni): se Kote
+          # aggiorna l'ISO Builder, la build riparte. Se il listing fallisce
+          # (es. secret mancanti), riusa il valore salvato -> neutro, nessun rebuild.
+          STORED_BUILDER_FP=$(awk '{print $3}' "$STATE_FILE" 2>/dev/null || true)
+          BUILDER_FP="${STORED_BUILDER_FP:-no-mega}"
+          if [ -n "${MEGA_USERNAME:-}" ] && [ -n "${MEGA_PASSWORD:-}" ]; then
+            mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD" >/dev/null 2>&1 || true
+            if MEGA_LS=$(mega-ls -l "$BUILDER_MEGA_LINK" 2>/dev/null) && [ -n "$MEGA_LS" ]; then
+              BUILDER_FP=$(printf '%s' "$MEGA_LS" | sha256sum | awk '{print $1}')
+            fi
+            mega-logout >/dev/null 2>&1 || true
+          fi
           LAST=$(cat "$STATE_FILE" 2>/dev/null || true)
           FORCE="${{ github.event.inputs.force }}"
           REGION_IN="${{ github.event.inputs.region }}"
@@ -97,6 +143,7 @@ jobs:
           echo "upstream_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
           echo "pack_fp=$PACK_FP" >> "$GITHUB_OUTPUT"
           echo "pack_version=$VER" >> "$GITHUB_OUTPUT"
+          echo "builder_fp=$BUILDER_FP" >> "$GITHUB_OUTPUT"
           echo "region=$REGION" >> "$GITHUB_OUTPUT"
 
           if [ -z "$UP_SHA" ]; then
@@ -116,17 +163,18 @@ jobs:
             exit 0
           fi
 
-          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$UP_SHA $PACK_FP" ]; then
+          if [ "$FORCE" = "true" ] || [ -z "$LAST" ] || [ "$LAST" != "$UP_SHA $PACK_FP $BUILDER_FP" ]; then
             echo "rebuild=true" >> "$GITHUB_OUTPUT"
             {
               echo "## Rilevato un aggiornamento, ricompilo"
-              echo "- Patcher: \`$UP_SHA\`"
+              echo "- Patcher GitHub: \`$UP_SHA\`"
               echo "- Pack Retro Rewind v$VER (impronta \`${PACK_FP:0:8}\`)"
+              echo "- Builder MEGA (impronta \`${BUILDER_FP:0:8}\`)"
               echo "- Regione: \`$REGION\` (RetroWFC, non Wiimmfi)"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
-            echo "Nessun aggiornamento per patcher o pack, build saltata." >> "$GITHUB_STEP_SUMMARY"
+            echo "Nessun aggiornamento per patcher, pack o builder, build saltata." >> "$GITHUB_STEP_SUMMARY"
           fi
 
   build:
@@ -146,14 +194,41 @@ jobs:
           sudo install -m755 "$WITDIR/bin/wit" /usr/local/bin/wit
           wit --version
 
-      - name: Prepara il patcher (updatedbuilder)
+      - name: Installa MEGAcmd
+        shell: bash
         run: |
-          curl -fsSL -o /tmp/updatedbuilder.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
-          unzip -q -o /tmp/updatedbuilder.zip
+          if ! command -v mega-get >/dev/null 2>&1; then
+            source /etc/os-release
+            DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+            wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+            sudo apt install -y "/tmp/${DEB}"
+          fi
+          mega-get --version 2>&1 | head -n2 || true
+
+      - name: Prepara il patcher (ISO Builder v6.12.5+ da MEGA)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Link pubblico (anonimo, nessun login): contiene SEMPRE il builder
+          # aggiornato con Kamek Loader v2. Quello su GitHub e' obsoleto (v1).
+          rm -rf /tmp/megabuilder
+          mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder
+          ls -R /tmp/megabuilder | head -n 30
+          unzip -q -o "/tmp/megabuilder/$BUILDER_SUBDIR/$BUILDER_ZIP"
           chmod a+x *.sh
           ls -R extra/Boot/Loaders
           test -f extra/Boot/Loaders/EUR/main.dol
           test -f copy-files.sh
+          grep -q "80005EFC" copy-files.sh || (echo "::error::copy-files.sh senza riga dolpatch 80005EFC: builder obsoleto?"; exit 1)
+          # Guardia Kamek v2: rifiuta il vecchio main.dol GitHub (Kamek v1),
+          # che produrrebbe "Incompatible file (version 2)" su Dolphin/Wii.
+          GOT_MD5=$(md5sum extra/Boot/Loaders/EUR/main.dol | awk '{print $1}')
+          echo "main.dol EUR md5=$GOT_MD5"
+          if [ "$GOT_MD5" = "$OLD_LOADER_MD5_EUR" ]; then
+            echo "::error::main.dol EUR ancora quello vecchio (Kamek v1). Builder MEGA non aggiornato?"
+            exit 1
+          fi
+          rm -rf /tmp/megabuilder
 
       - name: Scarica il pack Retro Rewind (full, RetroWFC)
         run: |
@@ -177,11 +252,8 @@ jobs:
             echo "::error::Secrets MEGA_USERNAME/MEGA_PASSWORD mancanti. Impostali in Settings > Secrets."
             exit 1
           fi
-          # Installa MEGAcmd (https://mega.io/cmd) in base alla versione Ubuntu del runner
-          source /etc/os-release
-          DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
-          wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
-          sudo apt install -y "/tmp/${DEB}"
+          # MEGAcmd gia' installato nello step dedicato; qui serve solo il login
+          # per la cartella privata /iso-originale (il builder sopra e' pubblico).
           mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD"
           echo "--- Contenuto di $MEGA_ISO_DIR ---"
           mega-ls -l "$MEGA_ISO_DIR"
@@ -233,10 +305,11 @@ jobs:
           ls workdir.tmp/files/Binaries/
           # NOTA: non usare MAI `wit --patch-wiimmfi` / dolpatch Wiimmfi qui:
           # il server online e' fornito da Pulsar/RetroWFC (rwfc.net), non da Wiimmfi.
+          # `--security-fix` come negli script ufficiali (firma ticket/TMD).
           rm -rf new-image
           wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
-            --name "Mario Kart Retro Rewind" --iso
+            --security-fix --name "Mario Kart Retro Rewind" --iso
           find new-image -maxdepth 1 -name '*.iso' -exec mv {} "new-image/$OUTPUT_NAME" \;
           ls -lh new-image
           df -h .
@@ -306,17 +379,22 @@ jobs:
           set -euo pipefail
           UP_SHA="${{ needs.check.outputs.upstream_sha }}"
           PACK_FP="${{ needs.check.outputs.pack_fp }}"
-          curl -fsSL -o /tmp/updatedbuilder.new.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
-          if ! cmp -s /tmp/updatedbuilder.new.zip updatedbuilder.zip; then
-            cp /tmp/updatedbuilder.new.zip updatedbuilder.zip
-            echo "updatedbuilder.zip aggiornato dal repo upstream"
+          BUILDER_FP="${{ needs.check.outputs.builder_fp }}"
+          # Riallinea updatedbuilder.zip del repo al builder MEGA ufficiale
+          # (quello su GitHub upstream e' obsoleto: Kamek v1).
+          rm -rf /tmp/megabuilder-sync
+          mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder-sync >/dev/null 2>&1
+          if ! cmp -s "/tmp/megabuilder-sync/$BUILDER_SUBDIR/$BUILDER_ZIP" updatedbuilder.zip; then
+            cp "/tmp/megabuilder-sync/$BUILDER_SUBDIR/$BUILDER_ZIP" updatedbuilder.zip
+            echo "updatedbuilder.zip aggiornato dal builder MEGA ufficiale"
           fi
+          rm -rf /tmp/megabuilder-sync
           mkdir -p runtime
-          printf '%s %s\n' "$UP_SHA" "$PACK_FP" > runtime/state.txt
+          printf '%s %s %s\n' "$UP_SHA" "$PACK_FP" "$BUILDER_FP" > runtime/state.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add updatedbuilder.zip runtime/state.txt
-          git diff --cached --quiet || git commit -m "sync: aggiorno iso-patcher e stato pack $PACK_FP"
+          git diff --cached --quiet || git commit -m "sync: aggiorno builder MEGA e stato pack $PACK_FP"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "$GITHUB_REF_NAME"
 
@@ -327,7 +405,8 @@ jobs:
           {
             echo "## Retro Rewind ISO build (RetroWFC)"
             echo "- Pack: v${{ needs.check.outputs.pack_version }}"
-            echo "- Upstream iso-patcher: \`${{ needs.check.outputs.upstream_sha }}\`"
+            echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
+            echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
             echo "- File: \`${{ env.OUTPUT_NAME }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_NAME }}\` su MEGA se configurato)"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
