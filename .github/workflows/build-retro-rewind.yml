@@ -80,7 +80,13 @@ env:
   MEGA_ISO_NAME: ""
   WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
   STATE_FILE: runtime/state.txt
+  # Due output dalla STESSA workdir patchata (stesso contenuto, due contenitori):
+  #  - .iso  -> Dolphin (PC/Mac/Android/iOS)
+  #  - .wbfs -> Wii / Wii U (vWii) via USB Loader GX / WiiFlow.
+  #    Nome file = GameID esatto: i forwarder di Kote e i loader cercano RMCPTO
+  #    (percorso consigliato sulla USB: /wbfs/RMCPTO.wbfs).
   OUTPUT_NAME: MarioKart-RetroRewind-PAL.iso
+  OUTPUT_WBFS: RMCPTO.wbfs
 
 jobs:
   check:
@@ -306,47 +312,69 @@ jobs:
           # NOTA: non usare MAI `wit --patch-wiimmfi` / dolpatch Wiimmfi qui:
           # il server online e' fornito da Pulsar/RetroWFC (rwfc.net), non da Wiimmfi.
           # `--security-fix` come negli script ufficiali (firma ticket/TMD).
+          # Si generano ENTRAMBI i contenitori dalla stessa workdir:
+          #  .iso  = Dolphin,  .wbfs = Wii (USB Loader GX / WiiFlow).
           rm -rf new-image
           wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
             --security-fix --name "Mario Kart Retro Rewind" --iso
           find new-image -maxdepth 1 -name '*.iso' -exec mv {} "new-image/$OUTPUT_NAME" \;
+          wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
+            --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
+            --security-fix --name "Mario Kart Retro Rewind" --wbfs
+          find new-image -maxdepth 1 -name '*.wbfs' -exec mv {} "new-image/$OUTPUT_WBFS" \;
           ls -lh new-image
           df -h .
 
-      - name: Verifica ISO finale (RetroWFC, niente patch Wiimmfi)
+      - name: Verifica file finali (RetroWFC, niente patch Wiimmfi)
         shell: bash
         run: |
           set -euxo pipefail
           ISO="new-image/$OUTPUT_NAME"
+          WBFS="new-image/$OUTPUT_WBFS"
           test -f "$ISO"
+          test -f "$WBFS"
           # NOTA: `wit INFO` non legge le ISO. LIST/ID6 si'.
-          wit LIST -l "$ISO" 2>&1 | tee /tmp/wit-info.txt
-          grep -q "RMCPTO" /tmp/wit-info.txt || (echo "::error::GameID atteso RMCPTO non trovato"; exit 1)
-          grep -q "Mario Kart Retro Rewind" /tmp/wit-info.txt || (echo "::error::Nome ISO atteso non trovato"; exit 1)
-          echo "--- Filelist ISO (controllo Retro Rewind) ---"
+          for F in "$ISO" "$WBFS"; do
+            echo "=== $F ==="
+            wit LIST -l "$F" 2>&1 | tee "/tmp/wit-info-$(basename "$F").txt"
+            grep -q "RMCPTO" "/tmp/wit-info-$(basename "$F").txt" || (echo "::error::GameID RMCPTO non trovato in $F"; exit 1)
+          done
+          grep -q "Mario Kart Retro Rewind" "/tmp/wit-info-$OUTPUT_NAME.txt" || (echo "::error::Nome ISO atteso non trovato"; exit 1)
+          echo "--- Filelist (controllo Retro Rewind) ---"
           wit FILES "$ISO" 2>&1 | tee /tmp/wit-files.txt | head -n 50
-          # La ISO deve contenere i file Pulsar/Retro (almeno Binaries + Course).
+          # La build deve contenere i file Pulsar/Retro (almeno Binaries + Course).
           # `wit FILES` elenca i percorsi interni; accettiamo sia formati con
           # prefisso "/" sia senza.
           grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
-            || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$ISO" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella ISO finale"; exit 1))
-          echo "OK: ISO $OUTPUT_NAME con ID RMCPTO, loader EUR e file Retro Rewind presenti."
+            || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$ISO" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella build finale"; exit 1))
+          # Stesso contenuto atteso nel .wbfs per la Wii
+          wit ID6 "$WBFS" 2>&1 | grep -q "RMCPTO" || (echo "::error::ID RMCPTO non trovato nel WBFS"; exit 1)
+          echo "OK: $OUTPUT_NAME (Dolphin) + $OUTPUT_WBFS (Wii) con ID RMCPTO, loader EUR e file Retro Rewind."
           echo "Server online: RetroWFC (rwfc.net) via Pulsar. Nessuna patch Wiimmfi applicata in questo workflow."
           {
-            echo "## Verifica ISO"
-            echo "- File: \`$OUTPUT_NAME\` ($(du -h "$ISO" | cut -f1))"
+            echo "## Verifica build"
+            echo "- Dolphin: \`$OUTPUT_NAME\` ($(du -h "$ISO" | cut -f1))"
+            echo "- Wii: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) -> copiare in \`/wbfs/$OUTPUT_WBFS\` sulla USB"
             echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
-            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` verificato con \`cmp\`"
+            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) verificato con \`cmp\`"
             echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload artifact (sempre, anche senza MEGA)
+      - name: Upload artifact ISO (Dolphin)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.OUTPUT_NAME }}
           path: new-image/${{ env.OUTPUT_NAME }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload artifact WBFS (Wii)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUTPUT_WBFS }}
+          path: new-image/${{ env.OUTPUT_WBFS }}
           if-no-files-found: error
           retention-days: 7
 
@@ -362,7 +390,7 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload su MEGA
+      - name: Upload ISO su MEGA (Dolphin)
         if: steps.mega.outputs.enabled == 'true'
         uses: Difegue/action-megacmd@1.4.0
         env:
@@ -370,6 +398,15 @@ jobs:
           PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         with:
           args: put -c /github/workspace/new-image/${{ env.OUTPUT_NAME }} /RetroRewind/
+
+      - name: Upload WBFS su MEGA (Wii)
+        if: steps.mega.outputs.enabled == 'true'
+        uses: Difegue/action-megacmd@1.4.0
+        env:
+          USERNAME: ${{ secrets.MEGA_USERNAME }}
+          PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        with:
+          args: put -c /github/workspace/new-image/${{ env.OUTPUT_WBFS }} /RetroRewind/
 
       - name: Aggiorna stato e sincronizza il fork
         shell: bash
@@ -403,11 +440,12 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Retro Rewind ISO build (RetroWFC)"
+            echo "## Retro Rewind build (RetroWFC) - Dolphin + Wii"
             echo "- Pack: v${{ needs.check.outputs.pack_version }}"
             echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
-            echo "- File: \`${{ env.OUTPUT_NAME }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_NAME }}\` su MEGA se configurato)"
+            echo "- Dolphin: \`${{ env.OUTPUT_NAME }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_NAME }}\` su MEGA)"
+            echo "- Wii: \`${{ env.OUTPUT_WBFS }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_WBFS }}\` su MEGA) -> copiare in \`/wbfs/${{ env.OUTPUT_WBFS }}\`"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
