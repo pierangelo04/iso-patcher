@@ -216,7 +216,9 @@ jobs:
           set -euxo pipefail
           # Link pubblico (anonimo, nessun login): contiene SEMPRE il builder
           # aggiornato con Kamek Loader v2. Quello su GitHub e' obsoleto (v1).
+          # NOTA: mega-get esige una cartella di destinazione ESISTENTE.
           rm -rf /tmp/megabuilder
+          mkdir -p /tmp/megabuilder
           mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder
           ls -R /tmp/megabuilder | head -n 30
           unzip -q -o "/tmp/megabuilder/$BUILDER_SUBDIR/$BUILDER_ZIP"
@@ -391,6 +393,7 @@ jobs:
           # Riallinea updatedbuilder.zip del repo al builder MEGA ufficiale
           # (quello su GitHub upstream e' obsoleto: Kamek v1).
           rm -rf /tmp/megabuilder-sync
+          mkdir -p /tmp/megabuilder-sync
           mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder-sync >/dev/null 2>&1
           if ! cmp -s "/tmp/megabuilder-sync/$BUILDER_SUBDIR/$BUILDER_ZIP" updatedbuilder.zip; then
             cp "/tmp/megabuilder-sync/$BUILDER_SUBDIR/$BUILDER_ZIP" updatedbuilder.zip
