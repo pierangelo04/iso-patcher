@@ -52,9 +52,12 @@ env:
   UPSTREAM_REPO: Retro-Rewind-Team/iso-patcher
   PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
   PACK_VERSION_URL: https://update.rwfc.net/RetroRewind/RetroRewindVersion.txt
-  # Base ISO PAL (deve contenere RMCP01). Per USA/JPN servono ISO RMCE01/RMCJ01:
-  # cambia ISO_URL oppure estendi la matrix sotto.
-  ISO_URL: https://archive.org/download/mario-kart_202107/MarioKart.iso
+  # Base ISO PAL (deve contenere RMCP01). NON piu' da archive.org:
+  # la ISO originale va caricata su MEGA nella cartella /iso-originale/
+  # (es. /iso-originale/MarioKart.iso). Se MEGA_ISO_NAME e' vuoto,
+  # il workflow prende automaticamente il primo .iso trovato nella cartella.
+  MEGA_ISO_DIR: /iso-originale
+  MEGA_ISO_NAME: ""
   WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
   STATE_FILE: runtime/state.txt
   OUTPUT_NAME: MarioKart-RetroRewind-PAL.iso
@@ -102,12 +105,13 @@ jobs:
             exit 0
           fi
 
-          # Nota: al momento la build automatica supporta solo PAL (ISO_URL PAL).
-          # Se viene richiesta USA/JPN, falliamo presto con messaggio chiaro.
+          # Nota: al momento la build automatica supporta solo PAL (la ISO su MEGA
+          # in /iso-originale deve contenere RMCP01). Se viene richiesta USA/JPN,
+          # falliamo presto con messaggio chiaro.
           if [ "$REGION" != "PAL" ]; then
             echo "## Regione non supportata in automatico" >> "$GITHUB_STEP_SUMMARY"
-            echo "Richesta regione \`$REGION\`, ma ISO_URL punta a una ISO PAL (RMCP01)." >> "$GITHUB_STEP_SUMMARY"
-            echo "Usa PAL oppure aggiungi ISO_URL per RMCE01/RMCJ01." >> "$GITHUB_STEP_SUMMARY"
+            echo "Richesta regione \`$REGION\`, ma la ISO su MEGA e' PAL (RMCP01)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Usa PAL oppure carica in /iso-originale una ISO RMCE01/RMCJ01." >> "$GITHUB_STEP_SUMMARY"
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -162,13 +166,44 @@ jobs:
           test -f RetroRewind6/Binaries/Loader.pul
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
 
-      - name: Scarica MarioKart.iso (PAL, RMCP01)
+      - name: Scarica ISO base da MEGA (PAL, RMCP01)
+        shell: bash
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o MarioKart.iso "$ISO_URL"
+          set -euxo pipefail
+          if [ -z "${MEGA_USERNAME:-}" ] || [ -z "${MEGA_PASSWORD:-}" ]; then
+            echo "::error::Secrets MEGA_USERNAME/MEGA_PASSWORD mancanti. Impostali in Settings > Secrets."
+            exit 1
+          fi
+          # Installa MEGAcmd (https://mega.io/cmd) in base alla versione Ubuntu del runner
+          source /etc/os-release
+          DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+          wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+          sudo apt install -y "/tmp/${DEB}"
+          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD"
+          echo "--- Contenuto di $MEGA_ISO_DIR ---"
+          mega-ls -l "$MEGA_ISO_DIR"
+          # Nome file: da MEGA_ISO_NAME oppure primo .iso trovato nella cartella
+          if [ -n "${MEGA_ISO_NAME:-}" ]; then
+            REMOTE_FILE="$MEGA_ISO_DIR/$MEGA_ISO_NAME"
+          else
+            PICK=$(mega-ls "$MEGA_ISO_DIR" | grep -i '\.iso$' | head -n1 | tr -d '\r' | xargs || true)
+            if [ -n "$PICK" ]; then PICK=$(basename "$PICK"); fi
+            if [ -z "$PICK" ]; then
+              echo "::error::Nessun file .iso trovato in $MEGA_ISO_DIR su MEGA."
+              exit 1
+            fi
+            REMOTE_FILE="$MEGA_ISO_DIR/$PICK"
+          fi
+          echo "Scarico $REMOTE_FILE -> MarioKart.iso"
+          mega-get "$REMOTE_FILE" ./MarioKart.iso
+          mega-logout || true
           ls -lh MarioKart.iso
           # NOTA: `wit INFO` stampa keywords interne, NON le ISO. Per le ISO usare LIST/ID6.
           wit LIST MarioKart.iso 2>&1 | head -n 30
-          wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base non contiene RMCP01 (PAL). Verifica ISO_URL."; exit 1)
+          wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base da MEGA non contiene RMCP01 (PAL). Controlla il file in $MEGA_ISO_DIR."; exit 1)
 
       - name: Compila l'ISO patchata (PAL -> loader EUR, RetroWFC)
         shell: bash
