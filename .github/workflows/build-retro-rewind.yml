@@ -299,10 +299,29 @@ jobs:
           # che NON esiste -> main.dol vanilla -> online su Wiimmfi invece di RetroWFC.
           # Usiamo quindi SRC_TYPE=EUR e verifichiamo con cmp.
           ls -lh "extra/Boot/Loaders/EUR/main.dol"
-          SRC_TYPE=EUR ./copy-files.sh
-          echo "--- Verifica loader Retro (deve essere identico a extra/Boot/Loaders/EUR/main.dol) ---"
+          SRC_TYPE=EUR ./copy-files.sh 2>&1 | tee /tmp/copyfiles.log
+          echo "--- Verifica loader Retro (builder v6.12.5+: dolpatch 80005EFC in-place) ---"
           ls -lh workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol extra/thp/bi2.bin workdir.tmp/sys/bi2.bin
-          cmp workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol || (echo "::error::main.dol NON sostituito: l'ISO avvierebbe vanilla/Wiimmfi invece di RetroWFC"; exit 1)
+          # Il builder nuovo applica `wit dolpatch main.dol 80005EFC=0000000A`
+          # DOPO la copia: stesso file, stessa dimensione, ma alcuni byte
+          # patchati. Quindi: dimensioni uguali + file DIVERSI + "Patched:" nel log.
+          [ "$(stat -c%s workdir.tmp/sys/main.dol)" = "$(stat -c%s extra/Boot/Loaders/EUR/main.dol)" ] \
+            || (echo "::error::main.dol di dimensione inattesa"; exit 1)
+          grep -q "Patched:" /tmp/copyfiles.log \
+            || (echo "::error::dolpatch 80005EFC NON eseguito da copy-files.sh"; exit 1)
+          if cmp -s workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol; then
+            echo "::error::main.dol identico all'originale: dolpatch NON applicato"
+            exit 1
+          fi
+          echo "Byte patchati (attesi: pochi, intorno alla patch 80005EFC):"
+          cmp -l workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol | head -n 40
+          NDIFF=$(cmp -l workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol | wc -l)
+          echo "Totale byte diversi: $NDIFF"
+          [ "$NDIFF" -ge 1 ] && [ "$NDIFF" -le 32 ] \
+            || (echo "::error::differenze main.dol anomale ($NDIFF byte): builder cambiato?"; exit 1)
+          # Mai il vecchio loader v1 (darebbe "Incompatible file (version 2)")
+          [ "$(md5sum workdir.tmp/sys/main.dol | awk '{print $1}')" != "$OLD_LOADER_MD5_EUR" ] \
+            || (echo "::error::main.dol ancora quello vecchio (Kamek v1)"; exit 1)
           cmp workdir.tmp/sys/bi2.bin extra/thp/bi2.bin || (echo "::error::bi2.bin NON sostituito"; exit 1)
           echo "--- Verifica file Retro Rewind in workdir ---"
           test -f workdir.tmp/files/Binaries/Code.pul
@@ -347,7 +366,7 @@ jobs:
             echo "## Verifica build"
             echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (in \`/wbfs/$OUTPUT_WBFS\` sulla USB)"
             echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
-            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) verificato con \`cmp\`"
+            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) + dolpatch \`80005EFC\` verificato"
             echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
