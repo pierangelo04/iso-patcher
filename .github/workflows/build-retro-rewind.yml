@@ -81,10 +81,11 @@ env:
   WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
   STATE_FILE: runtime/state.txt
   # UNICO output dalla workdir patchata, valido per ENTRAMBI i target
-  # (Dolphin legge i .wbfs nativamente, i loader Wii li usano di default):
-  #  - RMCPTO.wbfs -> Dolphin (PC/Mac/Android/iOS) E Wii / Wii U (vWii).
-  #    Nome file = GameID esatto: i forwarder di Kote e i loader cercano RMCPTO
-  #    (percorso consigliato sulla USB: /wbfs/RMCPTO.wbfs).
+  # (Dolphin legge i .wbfs nativamente, i loader Wii li usano di default).
+  # Nome file datato del giorno build: "Mario Kart Wii(Retro Rewind)-
+  # Aggiornamento DD-MM-YYYY.wbfs" (calcolato nello step di build e passato
+  # agli step successivi via GITHUB_ENV; il GameID interno resta RMCPTO).
+  # Dopo l'upload, gli altri file in /RetroRewind/ su MEGA vengono eliminati.
   OUTPUT_WBFS: RMCPTO.wbfs
 
 jobs:
@@ -339,11 +340,15 @@ jobs:
           # il server online e' fornito da Pulsar/RetroWFC (rwfc.net), non da Wiimmfi.
           # `--security-fix` come negli script ufficiali (firma ticket/TMD).
           # UNICO contenitore .wbfs: lo leggono sia Dolphin sia i loader Wii.
+          # Nome datato del giorno build (UTC).
+          OUT="Mario Kart Wii(Retro Rewind)-Aggiornamento $(date -u +%d-%m-%Y).wbfs"
+          echo "Nome output: $OUT"
           rm -rf new-image
           wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
             --security-fix --name "Mario Kart Retro Rewind" --wbfs
-          find new-image -maxdepth 1 -name '*.wbfs' -exec mv {} "new-image/$OUTPUT_WBFS" \;
+          find new-image -maxdepth 1 -name '*.wbfs' -exec mv {} "new-image/$OUT" \;
+          echo "OUTPUT_WBFS=$OUT" >> "$GITHUB_ENV"
           ls -lh new-image
           df -h .
 
@@ -370,7 +375,7 @@ jobs:
           echo "Server online: RetroWFC (rwfc.net) via Pulsar. Nessuna patch Wiimmfi applicata in questo workflow."
           {
             echo "## Verifica build"
-            echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (in \`/wbfs/$OUTPUT_WBFS\` sulla USB)"
+            echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
             echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) + dolpatch \`80005EFC\` verificato"
             echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
@@ -397,14 +402,29 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload WBFS su MEGA (Dolphin + Wii)
+      - name: Upload su MEGA + pulizia vecchi file
         if: steps.mega.outputs.enabled == 'true'
-        uses: Difegue/action-megacmd@1.4.0
+        shell: bash
         env:
-          USERNAME: ${{ secrets.MEGA_USERNAME }}
-          PASSWORD: ${{ secrets.MEGA_PASSWORD }}
-        with:
-          args: put -c /github/workspace/new-image/${{ env.OUTPUT_WBFS }} /RetroRewind/
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD"
+          echo "Carico new-image/$OUTPUT_WBFS -> /RetroRewind/"
+          mega-put -c "new-image/$OUTPUT_WBFS" "/RetroRewind/$OUTPUT_WBFS"
+          echo "--- Pulizia /RetroRewind: tengo solo $OUTPUT_WBFS ---"
+          mega-ls /RetroRewind | tr -d '\r' | while IFS= read -r f; do
+            name=$(printf '%s' "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            [ -n "$name" ] || continue
+            if [ "$name" = "$OUTPUT_WBFS" ]; then
+              echo "tengo: $name"
+            else
+              echo "elimino: $name"
+              mega-rm "/RetroRewind/$name" || echo "::warning::impossibile eliminare $name"
+            fi
+          done
+          mega-logout || true
 
       - name: Aggiorna stato e sincronizza il fork
         shell: bash
@@ -444,6 +464,6 @@ jobs:
             echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
-            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_WBFS }}\` su MEGA) per Dolphin E Wii (in \`/wbfs/${{ env.OUTPUT_WBFS }}\` sulla USB)"
+            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_WBFS }}\` su MEGA, vecchi file eliminati) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
