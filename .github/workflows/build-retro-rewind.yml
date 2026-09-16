@@ -1,5 +1,25 @@
 name: Build & upload Retro Rewind ISO
 
+# Workflow automatizzato per ISO Retro Rewind (RetroWFC, NON Wiimmfi).
+# Procedura manuale di riferimento (video https://www.youtube.com/watch?v=z5PW9iPkZfQ):
+#  1. scarica Retro Rewind full da wiki (rwfc.net) -> RetroRewind6/
+#  2. scarica ISO builder (updatedbuilder.zip da Retro-Rewind-Team/iso-patcher)
+#  3. installa Wiimm ISO Tools (wit)
+#  4. metti Mario Kart Wii .iso/.wbfs nella stessa cartella
+#  5. lancia create-rr-pal.bat (PAL) / -usa / -jpn in base alla regione Wii
+#  6. prendi il file da new-image/ e trasferiscilo su USB con Wii Backup Manager
+#  7. installa il forwarder WAD di Kote3767 e avvia da System Menu (non da HBC)
+# Questo workflow replica gli stessi passi su ubuntu-latest per la regione PAL.
+#
+# FIX IMPORTANTE RetroWFC vs Wiimmfi (verificato sui log run 34715396539):
+#  il log mostrava `cp: cannot stat './extra/Boot/Loaders/PAL/main.dol'`.
+#  copy-files.sh usa $SRC_TYPE per scegliere il loader, ma le cartelle sono
+#  EUR/USA/JPN (non PAL). I .bat usano BASEVER=EUR per PAL.
+#  Senza il loader EUR, l'ISO teneva il main.dol vanilla -> Pulsar/RetroWFC
+#  non partiva e l'USB Loader ripiegava sulla patch di default Wiimmfi.
+#  Fix: per PAL usare SRC_TYPE=EUR + verifica con `cmp` che il main.dol
+#  sia stato davvero sostituito. MAI usare `wit --patch-wiimmfi`.
+
 on:
   schedule:
     - cron: "17 4 * * *"
@@ -10,6 +30,15 @@ on:
         type: boolean
         required: false
         default: false
+      region:
+        description: "Regione da buildare"
+        type: choice
+        required: false
+        default: "PAL"
+        options:
+          - PAL
+          - USA
+          - JPN
   push:
     branches:
       - main
@@ -23,6 +52,8 @@ env:
   UPSTREAM_REPO: Retro-Rewind-Team/iso-patcher
   PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
   PACK_VERSION_URL: https://update.rwfc.net/RetroRewind/RetroRewindVersion.txt
+  # Base ISO PAL (deve contenere RMCP01). Per USA/JPN servono ISO RMCE01/RMCJ01:
+  # cambia ISO_URL oppure estendi la matrix sotto.
   ISO_URL: https://archive.org/download/mario-kart_202107/MarioKart.iso
   WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
   STATE_FILE: runtime/state.txt
@@ -36,6 +67,7 @@ jobs:
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
       pack_fp: ${{ steps.check.outputs.pack_fp }}
       pack_version: ${{ steps.check.outputs.pack_version }}
+      region: ${{ steps.check.outputs.region }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,15 +86,28 @@ jobs:
           VER=$(curl -fsSL "$PACK_VERSION_URL" 2>/dev/null | sed '/^$/d' | tail -n1 | awk '{print $1}')
           LAST=$(cat "$STATE_FILE" 2>/dev/null || true)
           FORCE="${{ github.event.inputs.force }}"
+          REGION_IN="${{ github.event.inputs.region }}"
+          REGION="${REGION_IN:-PAL}"
           PACK_FP=${PACK_FP:-no-ver}
           VER=${VER:-unknown}
 
           echo "upstream_sha=$UP_SHA" >> "$GITHUB_OUTPUT"
           echo "pack_fp=$PACK_FP" >> "$GITHUB_OUTPUT"
           echo "pack_version=$VER" >> "$GITHUB_OUTPUT"
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
 
           if [ -z "$UP_SHA" ]; then
             echo "Impossibile contattare l'API di GitHub, controllo saltato." >> "$GITHUB_STEP_SUMMARY"
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Nota: al momento la build automatica supporta solo PAL (ISO_URL PAL).
+          # Se viene richiesta USA/JPN, falliamo presto con messaggio chiaro.
+          if [ "$REGION" != "PAL" ]; then
+            echo "## Regione non supportata in automatico" >> "$GITHUB_STEP_SUMMARY"
+            echo "Richesta regione \`$REGION\`, ma ISO_URL punta a una ISO PAL (RMCP01)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Usa PAL oppure aggiungi ISO_URL per RMCE01/RMCJ01." >> "$GITHUB_STEP_SUMMARY"
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -73,6 +118,7 @@ jobs:
               echo "## Rilevato un aggiornamento, ricompilo"
               echo "- Patcher: \`$UP_SHA\`"
               echo "- Pack Retro Rewind v$VER (impronta \`${PACK_FP:0:8}\`)"
+              echo "- Regione: \`$REGION\` (RetroWFC, non Wiimmfi)"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
@@ -101,36 +147,98 @@ jobs:
           curl -fsSL -o /tmp/updatedbuilder.zip "https://raw.githubusercontent.com/$UPSTREAM_REPO/main/updatedbuilder.zip"
           unzip -q -o /tmp/updatedbuilder.zip
           chmod a+x *.sh
+          ls -R extra/Boot/Loaders
+          test -f extra/Boot/Loaders/EUR/main.dol
+          test -f copy-files.sh
 
-      - name: Scarica il pack Retro Rewind (full)
+      - name: Scarica il pack Retro Rewind (full, RetroWFC)
         run: |
           curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
           unzip -q RetroRewind.zip 'RetroRewind6/*'
           rm -f RetroRewind.zip
           du -sh RetroRewind6
+          test -f RetroRewind6/UI/Title.szs
+          test -f RetroRewind6/Binaries/Code.pul
+          test -f RetroRewind6/Binaries/Loader.pul
+          echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
 
-      - name: Scarica MarioKart.iso (PAL)
+      - name: Scarica MarioKart.iso (PAL, RMCP01)
         run: |
           curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o MarioKart.iso "$ISO_URL"
-          ls -la MarioKart.iso
+          ls -lh MarioKart.iso
+          wit info MarioKart.iso 2>&1 | head -n 30
+          wit info MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base non contiene RMCP01 (PAL). Verifica ISO_URL."; exit 1)
 
-      - name: Compila l'ISO patchata (PAL)
+      - name: Compila l'ISO patchata (PAL -> loader EUR, RetroWFC)
         shell: bash
         run: |
           set -euxo pipefail
           df -h .
-          rm -rf workdir.tmp
+          rm -rf workdir.tmp new-image
           wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
           test -d workdir.tmp
+          test -f workdir.tmp/setup.txt
           rm -f MarioKart.iso
-          SRC_TYPE=PAL ./copy-files.sh
+          # --- FIX RetroWFC: PAL usa il loader EUR (come create-rr-pal.bat BASEVER=EUR).
+          # copy-files.sh con SRC_TYPE=PAL cercherebbe extra/Boot/Loaders/PAL/main.dol
+          # che NON esiste -> main.dol vanilla -> online su Wiimmfi invece di RetroWFC.
+          # Usiamo quindi SRC_TYPE=EUR e verifichiamo con cmp.
+          ls -lh "extra/Boot/Loaders/EUR/main.dol"
+          SRC_TYPE=EUR ./copy-files.sh
+          echo "--- Verifica loader Retro (deve essere identico a extra/Boot/Loaders/EUR/main.dol) ---"
+          ls -lh workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol extra/thp/bi2.bin workdir.tmp/sys/bi2.bin
+          cmp workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol || (echo "::error::main.dol NON sostituito: l'ISO avvierebbe vanilla/Wiimmfi invece di RetroWFC"; exit 1)
+          cmp workdir.tmp/sys/bi2.bin extra/thp/bi2.bin || (echo "::error::bi2.bin NON sostituito"; exit 1)
+          echo "--- Verifica file Retro Rewind in workdir ---"
+          test -f workdir.tmp/files/Binaries/Code.pul
+          test -f workdir.tmp/files/Binaries/Loader.pul
+          test -f workdir.tmp/files/Scene/UI/Title.szs
+          test -d workdir.tmp/files/Race/Course
+          ls workdir.tmp/files/Binaries/
+          # NOTA: non usare MAI `wit --patch-wiimmfi` / dolpatch Wiimmfi qui:
+          # il server online e' fornito da Pulsar/RetroWFC (rwfc.net), non da Wiimmfi.
           rm -rf new-image
           wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
             --name "Mario Kart Retro Rewind" --iso
           find new-image -maxdepth 1 -name '*.iso' -exec mv {} "new-image/$OUTPUT_NAME" \;
-          ls -la new-image
+          ls -lh new-image
           df -h .
+
+      - name: Verifica ISO finale (RetroWFC, niente patch Wiimmfi)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ISO="new-image/$OUTPUT_NAME"
+          test -f "$ISO"
+          wit info "$ISO" 2>&1 | tee /tmp/wit-info.txt
+          grep -q "RMCPTO" /tmp/wit-info.txt || (echo "::error::GameID atteso RMCPTO non trovato"; exit 1)
+          grep -q "Mario Kart Retro Rewind" /tmp/wit-info.txt || (echo "::error::Nome ISO atteso non trovato"; exit 1)
+          echo "--- Filelist ISO (controllo Retro Rewind) ---"
+          wit files "$ISO" 2>&1 | tee /tmp/wit-files.txt | head -n 50
+          # La ISO deve contenere i file Pulsar/Retro (almeno Binaries + Course).
+          # `wit files` elenca i percorsi interni; accettiamo sia formati con
+          # prefisso "/" sia senza.
+          grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
+            || (echo "::warning::Code.pul non visibile in wit files, controllo con FILELIST"; wit file "$ISO" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella ISO finale"; exit 1))
+          echo "OK: ISO $OUTPUT_NAME con ID RMCPTO, loader EUR e file Retro Rewind presenti."
+          echo "Server online: RetroWFC (rwfc.net) via Pulsar. Nessuna patch Wiimmfi applicata in questo workflow."
+          {
+            echo "## Verifica ISO"
+            echo "- File: \`$OUTPUT_NAME\` ($(du -h "$ISO" | cut -f1))"
+            echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
+            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` verificato con \`cmp\`"
+            echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
+            echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact (sempre, anche senza MEGA)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUTPUT_NAME }}
+          path: new-image/${{ env.OUTPUT_NAME }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verifica credenziali MEGA
         id: mega
@@ -171,7 +279,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add updatedbuilder.zip runtime/state.txt
-          git diff --cached --quiet || git commit -m "sync: ageggio iso-patcher e stato pack $PACK_FP"
+          git diff --cached --quiet || git commit -m "sync: aggiorno iso-patcher e stato pack $PACK_FP"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "$GITHUB_REF_NAME"
 
@@ -180,8 +288,10 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Retro Rewind ISO build"
+            echo "## Retro Rewind ISO build (RetroWFC)"
             echo "- Pack: v${{ needs.check.outputs.pack_version }}"
             echo "- Upstream iso-patcher: \`${{ needs.check.outputs.upstream_sha }}\`"
-            echo "- File caricato su MEGA: \`/RetroRewind/${{ env.OUTPUT_NAME }}\`"
+            echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
+            echo "- File: \`${{ env.OUTPUT_NAME }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_NAME }}\` su MEGA se configurato)"
+            echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
