@@ -4,14 +4,17 @@ This will allows the user to patch Mario Kart Wii game back up to add the mod-pa
 
 ## Build automatica (GitHub Actions)
 
-Il workflow `.github/workflows/build-retro-rewind.yml` compila ogni giorno (se ci
-sono aggiornamenti di pack/builder) e a richiesta (`Actions > Run workflow >
-force: true`) UN unico file dalla build PAL (GameID `RMCPTO`, server RetroWFC),
-usabile sia su Dolphin (legge i .wbfs nativamente) sia su Wii:
+Il workflow `.github/workflows/build-retro-rewind.yml` compila ogni ora (se ci
+sono aggiornamenti di pack/builder/upstream) e a richiesta (`Actions > Run
+workflow > force: true`) UN unico file dalla build PAL (GameID interno `RMCPTO`,
+server RetroWFC), usabile sia su Dolphin (legge i .wbfs nativamente) sia su Wii:
 
-- `RMCPTO.wbfs` → **Dolphin** (PC/Mac/Android/iOS): aprilo direttamente.
-- `RMCPTO.wbfs` → **Wii / Wii U (vWii)** via USB Loader GX / WiiFlow:
-  copiare in `/wbfs/RMCPTO.wbfs` sulla USB.
+- `Mario Kart Wii(Retro Rewind)-Aggiornamento DD-MM-YYYY.wbfs`
+  (DD-MM-YYYY = giorno della build)
+
+Il file finisce come artifact della run e (se configurati i secret
+`MEGA_USERNAME`/`MEGA_PASSWORD`) nella cartella MEGA `/RetroRewind/`, dove gli
+altri file vecchi vengono eliminati (resta solo l'ultima build).
 
 I file finiscono come artifact della run e (se configurati i secret
 `MEGA_USERNAME`/`MEGA_PASSWORD`) nella cartella MEGA `/RetroRewind/`.
@@ -22,7 +25,7 @@ su GitHub che causava `FATAL ERROR: Incompatible file (version 2)`.
 
 ## Uso su Dolphin
 
-1. Apri `RMCPTO.wbfs` con Dolphin (i .wbfs si aprono come le .iso).
+1. Apri il `.wbfs` scaricato con Dolphin (i .wbfs si aprono come le .iso).
 2. Disattiva i cheat: Config > Generale > togli "Enable Cheats".
 3. Non usare ISO patchate per Wiimmfi e non attivare Retro Achievements.
 4. Se vedi "invalid reads": Config > Avanzate > Emulated Memory Size Override,
@@ -32,8 +35,10 @@ su GitHub che causava `FATAL ERROR: Incompatible file (version 2)`.
 
 ## Uso su Wii / Wii U (vWii)
 
-1. Copia `RMCPTO.wbfs` in `/wbfs/RMCPTO.wbfs` sulla USB
-   (se FAT32 e il file supera 4 GB, fallo convertire/splittare a
+1. Copia il `.wbfs` in `/wbfs/` sulla USB
+   (se il tuo forwarder cerca il percorso esatto `/wbfs/RMCPTO.wbfs`,
+   rinomina il file in `RMCPTO.wbfs`: il GameID interno resta quello giusto.
+   Se FAT32 e il file supera 4 GB, fallo convertire/splittare a
    Wii Backup Manager / Tiny Wii Backup Manager).
 2. Installa il forwarder di Kote (http://bit.ly/3J4auhe) con un WAD manager.
 3. Nel loader: cheat e funzionalita' cheat DISATTIVATE, nessuna patch Wiimmfi.
