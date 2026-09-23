@@ -1,0 +1,10 @@
+# Sessione OpenWA e artefatti locali: MAI committare credenziali/sessioni.
+# La sessione persistente vive solo nella cache delle GitHub Action,
+# il numero di telefono solo nel secret WA_PHONE_NUMBER.
+.openwa-session/
+openwa-qr.png
+pairing-code.txt
+wbfs/
+new-image/
+node_modules/
+*.log
