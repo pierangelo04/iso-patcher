@@ -494,7 +494,13 @@ jobs:
     # via actions/cache). Gira solo se la build e' andata a buon fine.
     # Destinatario: gruppo "Mario Kart Wii" (ricerca per nome, case-insensitive);
     # il secret WA_GROUP_ID, se impostato, fa da override diretto.
-    # Prima autenticazione: scansione del QR dall'artifact "openwa-qr".
+    # Prima autenticazione: pairing code se il secret WA_PHONE_NUMBER e' impostato
+    # (numero in formato internazionale, solo cifre) — il codice a 8 caratteri
+    # compare nei log e nell'artifact "openwa-pairing-code", da inserire sul
+    # telefono in WhatsApp > Dispositivi collegati > "Collega con il numero di
+    # telefono". Senza WA_PHONE_NUMBER si usa il QR (artifact "openwa-qr").
+    # NESSUNA credenziale nel repo: numero e sessione stanno solo nei secrets
+    # e nella cache delle Action.
     needs: [check, build]
     if: needs.build.result == 'success'
     runs-on: ubuntu-latest
@@ -530,8 +536,17 @@ jobs:
       - name: Invia WBFS al gruppo WhatsApp
         env:
           WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
+          WA_PHONE_NUMBER: ${{ secrets.WA_PHONE_NUMBER }}
           PACK_VERSION: ${{ needs.check.outputs.pack_version }}
         run: node scripts/send-whatsapp.cjs
+
+      - name: Carica pairing code (se serve autenticazione)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwa-pairing-code
+          path: pairing-code.txt
+          if-no-files-found: ignore
 
       - name: Carica QR (se serve autenticazione)
         if: always()

@@ -6,8 +6,16 @@
 // - Gruppo di destinazione: se il secret WA_GROUP_ID e' impostato lo usa
 //   direttamente (override), altrimenti cerca tra i gruppi il nome
 //   "Mario Kart Wii" (case-insensitive).
-// - Prima autenticazione: il QR viene salvato in openwa-qr.png e caricato
-//   come artifact del run (scansione entro ~5 minuti).
+// - Prima autenticazione: pairing code se il secret WA_PHONE_NUMBER e'
+//   impostato (numero in formato internazionale, solo cifre, es. 393331234567):
+//   il codice a 8 caratteri viene stampato nei log, salvato in
+//   pairing-code.txt (artifact) e va inserito sul telefono in
+//   WhatsApp > Dispositivi collegati > Collega un dispositivo >
+//   "Collega con il numero di telefono". Senza WA_PHONE_NUMBER si usa il QR
+//   (openwa-qr.png, artifact openwa-qr, scansione entro ~5 minuti).
+// - NESSUNA credenziale nel repo: numero di telefono e sessione vivono solo
+//   nei secrets GitHub (WA_PHONE_NUMBER) e nella cache delle Action
+//   (.openwa-session), mai committati.
 
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +23,20 @@ const { create, ev } = require('@open-wa/wa-automate');
 
 const GROUP_NAME = 'mario kart wii';
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024; // limite documenti WhatsApp
+
+// Estrae il codice a 8 caratteri dal payload dell'evento linkCode
+// (il formato esatto puo' variare tra le versioni della libreria).
+function extractCode(payload) {
+  if (!payload) return null;
+  if (typeof payload === 'string') {
+    const m = payload.replace(/-/g, '').match(/[A-Z0-9]{8}/i);
+    return m ? m[0].toUpperCase() : null;
+  }
+  for (const k of ['linkCode', 'code', 'pairingCode']) {
+    if (typeof payload[k] === 'string') return extractCode(payload[k]);
+  }
+  return extractCode(JSON.stringify(payload));
+}
 
 async function main() {
   const wbfsDir = path.join(process.cwd(), 'wbfs');
@@ -42,15 +64,37 @@ async function main() {
   });
 
   console.log('Avvio client OpenWA (sessione retro-rewind-sender)...');
-  const client = await create({
+  const phoneNumber = (process.env.WA_PHONE_NUMBER || '').replace(/\D/g, '');
+  const createConfig = {
     sessionId: 'retro-rewind-sender',
     headless: true,
     sessionDataPath: '.openwa-session',
-    qrTimeout: 300, // 5 minuti per scansionare il QR
+    qrTimeout: 300, // 5 minuti per QR / pairing code
     authTimeout: 120,
     qrLogSkip: false,
     chromiumArgs: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
+  };
+  if (phoneNumber) {
+    // Pairing code invece del QR: il numero arriva dal secret WA_PHONE_NUMBER,
+    // mai scritto nel repo.
+    createConfig.linkCode = phoneNumber;
+    console.log(`Pairing code richiesto per il numero ****${phoneNumber.slice(-4)}: ` +
+      `inserisci il codice a 8 caratteri in WhatsApp > Dispositivi collegati > ` +
+      `Collega un dispositivo > "Collega con il numero di telefono".`);
+    ev.on('launch.auth.linkCode.generated', (payload) => {
+      const code = extractCode(payload);
+      if (code) {
+        fs.writeFileSync('pairing-code.txt', `PAIRING CODE: ${code}\n`);
+        console.log('==================================================');
+        console.log(`  PAIRING CODE: ${code}`);
+        console.log('==================================================');
+      } else {
+        console.log('Evento linkCode ricevuto (formato non riconosciuto):',
+          JSON.stringify(payload).slice(0, 200));
+      }
+    });
+  }
+  const client = await create(createConfig);
 
   try {
     const override = (process.env.WA_GROUP_ID || '').trim();
@@ -88,3 +132,4 @@ main().catch((e) => {
   console.error('ERRORE invio WhatsApp:', e && e.message ? e.message : e);
   process.exit(1);
 });
+
