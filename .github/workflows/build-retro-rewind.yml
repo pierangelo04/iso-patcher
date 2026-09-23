@@ -29,6 +29,13 @@ name: Build & upload Retro Rewind ISO
 #  main.dol aggiornati (09/2026), SRC_TYPE=EUR per PAL, riga dolpatch
 #  `80005EFC=0000000A` e flag `--security-fix`.
 #  PERCIO' QUESTO WORKFLOW SCARICA IL BUILDER DA MEGA, NON DA GITHUB.
+#
+# NOTA DISPATCH (2026-09-23): quando il workflow e' avviato via
+# workflow_dispatch (es. dalla Netlify function check-retro-rewind, che ha
+# gia' rilevato un aggiornamento prima di fare dispatch), il job `check`
+# SALTA il confronto versioni/SHA e imposta rebuild=true direttamente.
+# La verifica completa resta solo per schedule orario, push e dispatch
+# con force=false manuale.
 
 on:
   schedule:
@@ -166,6 +173,20 @@ jobs:
             echo "Richesta regione \`$REGION\`, ma la ISO su MEGA e' PAL (RMCP01)." >> "$GITHUB_STEP_SUMMARY"
             echo "Usa PAL oppure carica in /iso-originale una ISO RMCE01/RMCJ01." >> "$GITHUB_STEP_SUMMARY"
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Skip verifica aggiornamenti quando il run e' avviato via
+          # workflow_dispatch (es. dalla Netlify function check-retro-rewind,
+          # che ha gia' rilevato un aggiornamento prima di fare dispatch):
+          # si builda direttamente senza confrontare versioni/SHA.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Dispatch via workflow_dispatch: build diretta"
+              echo "Verifica aggiornamenti saltata (gia' fatta dal chiamante)."
+              echo "- Pack Retro Rewind v$VER, regione \`$REGION\` (RetroWFC, non Wiimmfi)"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
