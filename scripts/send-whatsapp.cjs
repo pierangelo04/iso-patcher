@@ -77,6 +77,24 @@ async function main() {
   });
   sock.ev.on('creds.update', saveCreds);
 
+  // Richiede il pairing code aspettando che il WebSocket sia davvero aperto
+  // (requestPairingCode lancia "Connection Closed" se chiamato troppo presto).
+  async function getPairingCode() {
+    const start = Date.now();
+    for (;;) {
+      try {
+        return await sock.requestPairingCode(phoneNumber);
+      } catch (e) {
+        const msg = (e && e.message) || '';
+        if (msg.includes('Connection Closed') && Date.now() - start < 25000) {
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   // Attende la connessione; se serve il pairing, stampa (e rinnova) il codice.
   const connected = await new Promise((resolve, reject) => {
     let done = false;
@@ -99,11 +117,11 @@ async function main() {
     (async () => {
       try {
         if (!sock.authState.creds.registered) {
-          printCode(await sock.requestPairingCode(phoneNumber));
+          printCode(await getPairingCode());
           // Il codice scade in fretta: lo rigeneriamo ogni 90 secondi.
           refresh = setInterval(async () => {
             if (done) return;
-            try { printCode(await sock.requestPairingCode(phoneNumber)); } catch (_) { /* ignora */ }
+            try { printCode(await getPairingCode()); } catch (_) { /* ignora */ }
           }, 90000);
         } else {
           console.log('Sessione esistente trovata, connessione in corso...');
