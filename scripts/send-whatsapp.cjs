@@ -106,10 +106,16 @@ async function main() {
       if (connection === 'close') {
         const sc = lastDisconnect && lastDisconnect.error && lastDisconnect.error.output
           ? lastDisconnect.error.output.statusCode : null;
+        const detail = lastDisconnect && lastDisconnect.error ? (lastDisconnect.error.message || '') : '';
+        console.log(`Connessione chiusa durante il pairing (codice ${sc}: ${detail}).`);
         if (sc === DisconnectReason.loggedOut || sc === DisconnectReason.badSession) {
           if (!done) {
             done = true; if (refresh) clearInterval(refresh);
-            reject(new Error('Sessione WhatsApp non valida (logout). Riesegui il workflow per rifare il pairing da zero.'));
+            reject(new Error(
+              `WhatsApp ha rifiutato il pairing (codice ${sc}). ` +
+              'Controlla il secret WA_PHONE_NUMBER: solo cifre CON prefisso internazionale ' +
+              '(es. 393331234567), deve essere un numero con WhatsApp attivo.'
+            ));
           }
         }
       }
