@@ -39,21 +39,30 @@ function extractCode(payload) {
 }
 
 async function main() {
-  const wbfsDir = path.join(process.cwd(), 'wbfs');
-  const files = fs.existsSync(wbfsDir)
-    ? fs.readdirSync(wbfsDir).filter((f) => f.toLowerCase().endsWith('.wbfs'))
-    : [];
-  if (files.length === 0) {
-    throw new Error("Nessun file .wbfs trovato in ./wbfs/ (artifact non scaricato?).");
-  }
-  const wbfsPath = path.join(wbfsDir, files[0]);
-  const size = fs.statSync(wbfsPath).size;
-  console.log(`File da inviare: ${files[0]} (${(size / 1024 / 1024).toFixed(1)} MB)`);
-  if (size > MAX_FILE_BYTES) {
-    throw new Error(
-      `Il file supera i 2 GB (limite documenti WhatsApp): invio impossibile. ` +
-        `Il file resta disponibile come artifact del run e su MEGA.`
-    );
+  // WA_TEST_MODE=true: nessun file, solo un messaggio di testo di prova.
+  const testMode = process.env.WA_TEST_MODE === 'true';
+  let wbfsPath = null;
+  let fileName = null;
+  if (!testMode) {
+    const wbfsDir = path.join(process.cwd(), 'wbfs');
+    const files = fs.existsSync(wbfsDir)
+      ? fs.readdirSync(wbfsDir).filter((f) => f.toLowerCase().endsWith('.wbfs'))
+      : [];
+    if (files.length === 0) {
+      throw new Error("Nessun file .wbfs trovato in ./wbfs/ (artifact non scaricato?).");
+    }
+    fileName = files[0];
+    wbfsPath = path.join(wbfsDir, fileName);
+    const size = fs.statSync(wbfsPath).size;
+    console.log(`File da inviare: ${fileName} (${(size / 1024 / 1024).toFixed(1)} MB)`);
+    if (size > MAX_FILE_BYTES) {
+      throw new Error(
+        `Il file supera i 2 GB (limite documenti WhatsApp): invio impossibile. ` +
+          `Il file resta disponibile come artifact del run e su MEGA.`
+      );
+    }
+  } else {
+    console.log('Modalita TEST: verra inviato solo un messaggio di testo.');
   }
 
   // Salva il QR come PNG se serve (prima autenticazione / sessione scaduta)
@@ -117,12 +126,18 @@ async function main() {
       console.log(`Gruppo trovato: "${found.name}" (${groupId})`);
     }
 
-    const packVersion = process.env.PACK_VERSION || '?';
-    const today = new Date().toISOString().slice(0, 10);
-    const caption = `🎮 Retro Rewind aggiornato!\nPack v${packVersion} — build del ${today}\nISO patchata pronta per Dolphin e Wii.`;
-    console.log(`Invio file a ${groupId}...`);
-    await client.sendFile(groupId, wbfsPath, files[0], caption);
-    console.log('File inviato al gruppo con successo.');
+    if (testMode) {
+      console.log(`Invio messaggio di TEST a ${groupId}...`);
+      await client.sendText(groupId, '🧪 Test notifica Retro Rewind: il bot WhatsApp funziona ✅');
+      console.log('Messaggio di test inviato al gruppo.');
+    } else {
+      const packVersion = process.env.PACK_VERSION || '?';
+      const today = new Date().toISOString().slice(0, 10);
+      const caption = `🎮 Retro Rewind aggiornato!\nPack v${packVersion} — build del ${today}\nISO patchata pronta per Dolphin e Wii.`;
+      console.log(`Invio file a ${groupId}...`);
+      await client.sendFile(groupId, wbfsPath, fileName, caption);
+      console.log('File inviato al gruppo con successo.');
+    }
   } finally {
     await client.kill();
   }
