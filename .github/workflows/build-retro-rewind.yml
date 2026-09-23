@@ -56,6 +56,14 @@ on:
           - PAL
           - USA
           - JPN
+      test_whatsapp:
+        description: 'Test solo invio WhatsApp (salta la build, manda un messaggio di prova)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
   push:
     branches:
       - main
@@ -206,7 +214,7 @@ jobs:
 
   build:
     needs: check
-    if: needs.check.outputs.rebuild == 'true'
+    if: needs.check.outputs.rebuild == 'true' && github.event.inputs.test_whatsapp != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -502,7 +510,7 @@ jobs:
     # NESSUNA credenziale nel repo: numero e sessione stanno solo nei secrets
     # e nella cache delle Action.
     needs: [check, build]
-    if: needs.build.result == 'success'
+    if: needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -522,6 +530,7 @@ jobs:
           restore-keys: openwa-session-
 
       - name: Scarica artifact WBFS
+        if: github.event.inputs.test_whatsapp != 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: "*.wbfs"
@@ -538,6 +547,7 @@ jobs:
           WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
           WA_PHONE_NUMBER: ${{ secrets.WA_PHONE_NUMBER }}
           PACK_VERSION: ${{ needs.check.outputs.pack_version }}
+          WA_TEST_MODE: ${{ github.event.inputs.test_whatsapp }}
         run: node scripts/send-whatsapp.cjs
 
       - name: Carica pairing code (se serve autenticazione)
