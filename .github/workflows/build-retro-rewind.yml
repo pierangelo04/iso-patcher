@@ -510,7 +510,7 @@ jobs:
     # NESSUNA credenziale nel repo: numero e sessione stanno solo nei secrets
     # e nella cache delle Action.
     needs: [check, build]
-    if: needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true'
+    if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
