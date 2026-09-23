@@ -541,7 +541,7 @@ jobs:
       - name: Installa Baileys
         run: |
           npm init -y >/dev/null 2>&1 || true
-          npm i @whiskeysockets/baileys --no-audit --no-fund --loglevel=error
+          npm i @whiskeysockets/baileys@legacy --no-audit --no-fund --loglevel=error
 
       - name: Invia WBFS al gruppo WhatsApp
         env:
