@@ -488,3 +488,62 @@ jobs:
             echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_WBFS }}\` su MEGA, vecchi file eliminati) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-whatsapp:
+    # Invio WhatsApp del .wbfs appena buildato (OpenWA, sessione persistente
+    # via actions/cache). Gira solo se la build e' andata a buon fine.
+    # Destinatario: gruppo "Mario Kart Wii" (ricerca per nome, case-insensitive);
+    # il secret WA_GROUP_ID, se impostato, fa da override diretto.
+    # Prima autenticazione: scansione del QR dall'artifact "openwa-qr".
+    needs: [check, build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Ripristina sessione OpenWA
+        uses: actions/cache/restore@v4
+        with:
+          path: .openwa-session
+          key: openwa-session-v1
+          restore-keys: openwa-session-
+
+      - name: Scarica artifact WBFS
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*.wbfs"
+          path: wbfs
+          merge-multiple: true
+
+      - name: Installa @open-wa/wa-automate
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm i @open-wa/wa-automate --no-audit --no-fund --loglevel=error
+
+      - name: Invia WBFS al gruppo WhatsApp
+        env:
+          WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
+          PACK_VERSION: ${{ needs.check.outputs.pack_version }}
+        run: node scripts/send-whatsapp.cjs
+
+      - name: Carica QR (se serve autenticazione)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwa-qr
+          path: openwa-qr.png
+          if-no-files-found: ignore
+
+      - name: Salva sessione OpenWA
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .openwa-session
+          key: openwa-session-v1-${{ github.run_id }}
