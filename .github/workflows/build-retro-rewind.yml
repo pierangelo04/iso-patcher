@@ -498,15 +498,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-whatsapp:
-    # Invio WhatsApp del .wbfs appena buildato (OpenWA, sessione persistente
-    # via actions/cache). Gira solo se la build e' andata a buon fine.
+    # Invio WhatsApp del .wbfs appena buildato (Baileys, sessione persistente
+    # via actions/cache). Gira solo se la build e' andata a buon fine
+    # (o in modalita test_whatsapp).
     # Destinatario: gruppo "Mario Kart Wii" (ricerca per nome, case-insensitive);
     # il secret WA_GROUP_ID, se impostato, fa da override diretto.
-    # Prima autenticazione: pairing code se il secret WA_PHONE_NUMBER e' impostato
+    # Prima autenticazione: pairing code generato dal secret WA_PHONE_NUMBER
     # (numero in formato internazionale, solo cifre) — il codice a 8 caratteri
-    # compare nei log e nell'artifact "openwa-pairing-code", da inserire sul
+    # compare nei log e nell'artifact "baileys-pairing-code", da inserire sul
     # telefono in WhatsApp > Dispositivi collegati > "Collega con il numero di
-    # telefono". Senza WA_PHONE_NUMBER si usa il QR (artifact "openwa-qr").
+    # telefono".
     # NESSUNA credenziale nel repo: numero e sessione stanno solo nei secrets
     # e nella cache delle Action.
     needs: [check, build]
@@ -522,12 +523,12 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Ripristina sessione OpenWA
+      - name: Ripristina sessione Baileys
         uses: actions/cache/restore@v4
         with:
-          path: .openwa-session
-          key: openwa-session-v1
-          restore-keys: openwa-session-
+          path: .baileys-session
+          key: baileys-session-v1
+          restore-keys: baileys-session-
 
       - name: Scarica artifact WBFS
         if: github.event.inputs.test_whatsapp != 'true'
@@ -537,10 +538,10 @@ jobs:
           path: wbfs
           merge-multiple: true
 
-      - name: Installa @open-wa/wa-automate
+      - name: Installa Baileys
         run: |
           npm init -y >/dev/null 2>&1 || true
-          npm i @open-wa/wa-automate --no-audit --no-fund --loglevel=error
+          npm i @whiskeysockets/baileys --no-audit --no-fund --loglevel=error
 
       - name: Invia WBFS al gruppo WhatsApp
         env:
@@ -554,21 +555,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openwa-pairing-code
+          name: baileys-pairing-code
           path: pairing-code.txt
           if-no-files-found: ignore
 
-      - name: Carica QR (se serve autenticazione)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwa-qr
-          path: openwa-qr.png
-          if-no-files-found: ignore
 
-      - name: Salva sessione OpenWA
+      - name: Salva sessione Baileys
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: .openwa-session
-          key: openwa-session-v1-${{ github.run_id }}
+          path: .baileys-session
+          key: baileys-session-v1-${{ github.run_id }}
