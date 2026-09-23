@@ -2,6 +2,7 @@
 # La sessione persistente vive solo nella cache delle GitHub Action,
 # il numero di telefono solo nel secret WA_PHONE_NUMBER.
 .openwa-session/
+.baileys-session/
 openwa-qr.png
 pairing-code.txt
 wbfs/
