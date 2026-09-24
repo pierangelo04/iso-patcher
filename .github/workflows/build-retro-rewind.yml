@@ -558,9 +558,10 @@ jobs:
           set -euo pipefail
           cd openwa
           mkdir -p data
-          printf '%s' "$OPENWA_API_KEY" > data/.api-key
           printf 'ENGINE_TYPE=baileys\nPORT=2785\n' > .env
-          node dist/main.js > ../openwa-server.log 2>&1 &
+          # La chiave API va passata via API_MASTER_KEY al primo avvio
+          # (data/.api-key viene scritto dal server, non letto)
+          API_MASTER_KEY="$OPENWA_API_KEY" node dist/main.js > ../openwa-server.log 2>&1 &
           SRV=$!
           trap 'kill $SRV 2>/dev/null || true' EXIT
           API="http://127.0.0.1:2785"
