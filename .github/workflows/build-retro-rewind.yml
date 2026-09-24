@@ -498,22 +498,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-whatsapp:
-    # Invio WhatsApp del .wbfs appena buildato (Baileys, sessione persistente
-    # via actions/cache). Gira solo se la build e' andata a buon fine
-    # (o in modalita test_whatsapp).
-    # Destinatario: gruppo "Mario Kart Wii" (ricerca per nome, case-insensitive);
-    # il secret WA_GROUP_ID, se impostato, fa da override diretto.
-    # Prima autenticazione: pairing code generato dal secret WA_PHONE_NUMBER
-    # (numero in formato internazionale, solo cifre) — il codice a 8 caratteri
-    # compare nei log e nell'artifact "baileys-pairing-code", da inserire sul
-    # telefono in WhatsApp > Dispositivi collegati > "Collega con il numero di
-    # telefono".
-    # NESSUNA credenziale nel repo: numero e sessione stanno solo nei secrets
-    # e nella cache delle Action.
+    # Invio WhatsApp del .wbfs appena buildato via OpenWA, che gira
+    # DIRETTAMENTE sul runner (niente VPS, niente Baileys diretto):
+    # il server parte in locale, la sessione viene ripristinata dal secret
+    # OPENWA_BAILEYS_CREDS_B64 e l'invio avviene via API REST su 127.0.0.1.
+    # Gira solo se la build e' andata a buon fine (o in modalita test_whatsapp).
+    # Secrets richiesti: OPENWA_API_KEY, OPENWA_BAILEYS_CREDS_B64 (creds.json
+    # Baileys in base64), WA_GROUP_ID (gia' esistente).
+    # NESSUNA credenziale nel repo.
     needs: [check, build]
     if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: openwa-notify
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -521,16 +520,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
-      - name: Ripristina sessione Baileys
-        uses: actions/cache/restore@v4
-        with:
-          path: .baileys-session
-          key: baileys-session-v1
-          restore-keys: baileys-session-
-
-      - name: Scarica artifact WBFS
+      - name: Scarica artifact WBFS (nome file per il messaggio)
         if: github.event.inputs.test_whatsapp != 'true'
         uses: actions/download-artifact@v4
         with:
@@ -538,31 +530,91 @@ jobs:
           path: wbfs
           merge-multiple: true
 
-      - name: Installa Baileys
-        run: |
-          npm init -y >/dev/null 2>&1 || true
-          npm i @whiskeysockets/baileys@legacy --no-audit --no-fund --loglevel=error
+      - name: Cache npm (dipendenze OpenWA)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-openwa-v1
 
-      - name: Invia WBFS al gruppo WhatsApp
+      - name: Clona e compila OpenWA
+        run: |
+          set -euxo pipefail
+          rm -rf openwa
+          git clone --depth 1 https://github.com/rmyndharis/OpenWA openwa
+          cd openwa
+          # Niente Chromium: usiamo solo il motore Baileys
+          export PUPPETEER_SKIP_DOWNLOAD=1
+          npm ci --no-audit --no-fund --loglevel=error
+          npm run build
+
+      - name: Avvia OpenWA e invia notifica
         env:
+          OPENWA_API_KEY: ${{ secrets.OPENWA_API_KEY }}
+          OPENWA_BAILEYS_CREDS_B64: ${{ secrets.OPENWA_BAILEYS_CREDS_B64 }}
           WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
-          WA_PHONE_NUMBER: ${{ secrets.WA_PHONE_NUMBER }}
           PACK_VERSION: ${{ needs.check.outputs.pack_version }}
           WA_TEST_MODE: ${{ github.event.inputs.test_whatsapp }}
-        run: node scripts/send-whatsapp.cjs
-
-      - name: Carica pairing code (se serve autenticazione)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: baileys-pairing-code
-          path: pairing-code.txt
-          if-no-files-found: ignore
-
-
-      - name: Salva sessione Baileys
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .baileys-session
-          key: baileys-session-v1-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cd openwa
+          mkdir -p data
+          printf '%s' "$OPENWA_API_KEY" > data/.api-key
+          printf 'ENGINE_TYPE=baileys\nPORT=2785\n' > .env
+          node dist/main.js > ../openwa-server.log 2>&1 &
+          SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          API="http://127.0.0.1:2785"
+          # 1. attesa avvio server con motore baileys
+          for i in $(seq 1 24); do
+            if curl -sf -m 5 -H "x-api-key: $OPENWA_API_KEY" \
+                "$API/api/infra/engines/current" 2>/dev/null | grep -q baileys; then
+              echo "OpenWA avviato (motore baileys)"
+              break
+            fi
+            sleep 5
+            if [ "$i" = 24 ]; then
+              echo "::error::OpenWA non partito in tempo"
+              tail -n 30 ../openwa-server.log || true
+              exit 1
+            fi
+          done
+          # 2. crea sessione e ripristina le credenziali Baileys dal secret
+          SID=$(curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' -d '{"name":"retro-rewind"}' \
+            "$API/api/sessions" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          echo "sessione: $SID"
+          mkdir -p "data/baileys/$SID"
+          printf '%s' "$OPENWA_BAILEYS_CREDS_B64" | base64 -d > "data/baileys/$SID/creds.json"
+          chmod 600 "data/baileys/$SID/creds.json"
+          curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            "$API/api/sessions/$SID/start" > /dev/null
+          # 3. attesa connessione a WhatsApp
+          for i in $(seq 1 36); do
+            ST=$(curl -s -m 10 -H "x-api-key: $OPENWA_API_KEY" \
+              "$API/api/sessions/$SID" 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null || echo "?")
+            echo "stato sessione: $ST"
+            [ "$ST" = ready ] && break
+            if [ "$ST" = qr_ready ] || [ "$ST" = failed ]; then
+              echo "::error::sessione WhatsApp non ripristinata (stato $ST): rigenerare il secret OPENWA_BAILEYS_CREDS_B64"
+              exit 1
+            fi
+            sleep 5
+            if [ "$i" = 36 ]; then
+              echo "::error::timeout connessione WhatsApp"
+              exit 1
+            fi
+          done
+          # 4. invio messaggio al gruppo
+          if [ "${WA_TEST_MODE:-false}" = "true" ]; then
+            MSG="Test notifica Retro Rewind: OpenWA gira su GitHub Actions e funziona"
+          else
+            WBFS=$(ls ../wbfs/*.wbfs 2>/dev/null | head -n1 | xargs -r basename || true)
+            MSG="Retro Rewind aggiornata! Nuova build pronta: ${WBFS:-file .wbfs} (pack v$PACK_VERSION)"
+          fi
+          BODY=$(python3 -c "import json,sys; print(json.dumps({'chatId': sys.argv[1], 'text': sys.argv[2]}))" \
+            "$WA_GROUP_ID" "$MSG")
+          RESP=$(curl -sf -m 30 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' -d "$BODY" \
+            "$API/api/sessions/$SID/messages/send-text")
+          echo "inviato: $RESP"
