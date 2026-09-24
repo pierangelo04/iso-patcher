@@ -100,7 +100,8 @@ env:
   # Nome file datato del giorno build: "Mario Kart Wii(Retro Rewind)-
   # Aggiornamento DD-MM-YYYY.wbfs" (calcolato nello step di build e passato
   # agli step successivi via GITHUB_ENV; il GameID interno resta RMCPTO).
-  # Dopo l'upload, gli altri file in /RetroRewind/ su MEGA vengono eliminati.
+  # Dopo la build il file viene caricato su GoFile (API anonima, link
+  # pubblico nel messaggio WhatsApp). L'upload su MEGA e' stato rimosso.
   OUTPUT_WBFS: RMCPTO.wbfs
 
 jobs:
@@ -217,6 +218,8 @@ jobs:
     if: needs.check.outputs.rebuild == 'true' && github.event.inputs.test_whatsapp != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    outputs:
+      download_url: ${{ steps.gofile.outputs.download_url }}
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -419,41 +422,24 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Verifica credenziali MEGA
-        id: mega
+      - name: Upload WBFS su GoFile (link per WhatsApp)
+        id: gofile
         shell: bash
-        env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
-        run: |
-          if [ -n "$MEGA_USERNAME" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Upload su MEGA + pulizia vecchi file
-        if: steps.mega.outputs.enabled == 'true'
-        shell: bash
-        env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
           set -euo pipefail
-          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD"
-          echo "Carico new-image/$OUTPUT_WBFS -> /RetroRewind/"
-          mega-put -c "new-image/$OUTPUT_WBFS" "/RetroRewind/$OUTPUT_WBFS"
-          echo "--- Pulizia /RetroRewind: tengo solo $OUTPUT_WBFS ---"
-          mega-ls /RetroRewind | tr -d '\r' | while IFS= read -r f; do
-            name=$(printf '%s' "$f" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-            [ -n "$name" ] || continue
-            if [ "$name" = "$OUTPUT_WBFS" ]; then
-              echo "tengo: $name"
-            else
-              echo "elimino: $name"
-              mega-rm "/RetroRewind/$name" || echo "::warning::impossibile eliminare $name"
-            fi
-          done
-          mega-logout || true
+          WBFS="new-image/$OUTPUT_WBFS"
+          SERVER=$(curl -fsSL https://api.gofile.io/servers \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['servers'][0]['name'])")
+          echo "Server GoFile: $SERVER"
+          RESP=$(curl -fsSL -F "file=@$WBFS" "https://$SERVER.gofile.io/contents/uploadfile")
+          URL=$(printf '%s' "$RESP" | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d.get('status') == 'ok', d
+          print(d['data']['downloadPage'])
+          ")
+          echo "Link GoFile: $URL"
+          echo "download_url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Aggiorna stato e sincronizza il fork
         shell: bash
@@ -493,7 +479,7 @@ jobs:
             echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
-            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + \`/RetroRewind/${{ env.OUTPUT_WBFS }}\` su MEGA, vecchi file eliminati) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
+            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + GoFile: ${{ steps.gofile.outputs.download_url }}) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -553,6 +539,7 @@ jobs:
           OPENWA_BAILEYS_CREDS_B64: ${{ secrets.OPENWA_BAILEYS_CREDS_B64 }}
           WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
           PACK_VERSION: ${{ needs.check.outputs.pack_version }}
+          GOFILE_URL: ${{ needs.build.outputs.download_url }}
           WA_TEST_MODE: ${{ github.event.inputs.test_whatsapp }}
         run: |
           set -euo pipefail
@@ -612,6 +599,9 @@ jobs:
           else
             WBFS=$(ls ../wbfs/*.wbfs 2>/dev/null | head -n1 | xargs -r basename || true)
             MSG="Retro Rewind aggiornata! Nuova build pronta: ${WBFS:-file .wbfs} (pack v$PACK_VERSION)"
+            if [ -n "${GOFILE_URL:-}" ]; then
+              MSG=$(printf '%s\nDownload: %s' "$MSG" "$GOFILE_URL")
+            fi
           fi
           BODY=$(python3 -c "import json,sys; print(json.dumps({'chatId': sys.argv[1], 'text': sys.argv[2]}))" \
             "$WA_GROUP_ID" "$MSG")
