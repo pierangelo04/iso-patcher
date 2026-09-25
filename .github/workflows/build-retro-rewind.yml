@@ -441,7 +441,7 @@ jobs:
             | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
           # 2. upload del file in streaming (uploadType=media con --upload-file:
           # NON usare --data-binary multipart: caricherebbe i 3,3 GB in RAM)
-          FID=$(curl -fsSL -T "$WBFS" \
+          FID=$(curl -fsSL -X POST -T "$WBFS" \
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id" \
             -H "Authorization: Bearer $AT" \
             -H "Content-Type: application/octet-stream" \
