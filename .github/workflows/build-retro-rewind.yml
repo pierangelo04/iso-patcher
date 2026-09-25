@@ -220,6 +220,7 @@ jobs:
     timeout-minutes: 360
     outputs:
       download_url: ${{ steps.drive.outputs.download_url }}
+      wbfs_name: ${{ steps.wbfsname.outputs.wbfs_name }}
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -414,14 +415,6 @@ jobs:
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload artifact WBFS (Dolphin + Wii)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.OUTPUT_WBFS }}
-          path: new-image/${{ env.OUTPUT_WBFS }}
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Upload WBFS su Google Drive (link per WhatsApp)
         id: drive
         shell: bash
@@ -477,6 +470,11 @@ jobs:
             fi
           done
 
+      - name: Esponi nome WBFS per la notifica
+        id: wbfsname
+        shell: bash
+        run: echo "wbfs_name=$OUTPUT_WBFS" >> "$GITHUB_OUTPUT"
+
       - name: Aggiorna stato e sincronizza il fork
         shell: bash
         env:
@@ -515,7 +513,7 @@ jobs:
             echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
-            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (artifact + Drive: ${{ steps.drive.outputs.download_url }}) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
+            echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (Drive: ${{ steps.drive.outputs.download_url }}) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -544,14 +542,6 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Scarica artifact WBFS (nome file per il messaggio)
-        if: github.event.inputs.test_whatsapp != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "*.wbfs"
-          path: wbfs
-          merge-multiple: true
-
       - name: Cache npm (dipendenze OpenWA)
         uses: actions/cache@v4
         with:
@@ -576,6 +566,7 @@ jobs:
           WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
           PACK_VERSION: ${{ needs.check.outputs.pack_version }}
           DRIVE_URL: ${{ needs.build.outputs.download_url }}
+          WBFS_NAME: ${{ needs.build.outputs.wbfs_name }}
           WA_TEST_MODE: ${{ github.event.inputs.test_whatsapp }}
         run: |
           set -euo pipefail
@@ -633,8 +624,7 @@ jobs:
           if [ "${WA_TEST_MODE:-false}" = "true" ]; then
             MSG="Test notifica Retro Rewind: OpenWA gira su GitHub Actions e funziona"
           else
-            WBFS=$(ls ../wbfs/*.wbfs 2>/dev/null | head -n1 | xargs -r basename || true)
-            MSG="Retro Rewind aggiornata! Nuova build pronta: ${WBFS:-file .wbfs} (pack v$PACK_VERSION)"
+            MSG="Retro Rewind aggiornata! Nuova build pronta: ${WBFS_NAME:-file .wbfs} (pack v$PACK_VERSION)"
             if [ -n "${DRIVE_URL:-}" ]; then
               MSG=$(printf '%s\nDownload: %s' "$MSG" "$DRIVE_URL")
             fi
