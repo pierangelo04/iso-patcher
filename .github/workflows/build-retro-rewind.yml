@@ -439,23 +439,19 @@ jobs:
             --data-urlencode "client_id=$DRIVE_CLIENT_ID" \
             --data-urlencode "client_secret=$DRIVE_CLIENT_SECRET" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-          # 2. upload multipart su Drive
-          META=$(python3 -c "import json; print(json.dumps({'name': '$OUTPUT_WBFS'}))")
-          BOUNDARY="drive-upload-boundary"
-          BODY=$(mktemp)
-          {
-            printf -- "--%s\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n%s\r\n" "$BOUNDARY" "$META"
-            printf -- "--%s\r\nContent-Type: application/octet-stream\r\n\r\n" "$BOUNDARY"
-            cat "$WBFS"
-            printf "\r\n--%s--\r\n" "$BOUNDARY"
-          } > "$BODY"
-          FID=$(curl -fsSL -X POST "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id" \
+          # 2. upload del file in streaming (uploadType=media con --upload-file:
+          # NON usare --data-binary multipart: caricherebbe i 3,3 GB in RAM)
+          FID=$(curl -fsSL -T "$WBFS" \
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id" \
             -H "Authorization: Bearer $AT" \
-            -H "Content-Type: multipart/related; boundary=$BOUNDARY" \
-            --data-binary "@$BODY" \
+            -H "Content-Type: application/octet-stream" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-          rm -f "$BODY"
           echo "File caricato su Drive, ID: $FID"
+          # 2b. imposta il nome file (uploadType=media non accetta metadati)
+          META=$(python3 -c "import json; print(json.dumps({'name': '$OUTPUT_WBFS'}))")
+          curl -fsSL -X PATCH "https://www.googleapis.com/drive/v3/files/$FID" \
+            -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
+            -d "$META" > /dev/null
           # 3. link pubblico (chiunque abbia il link puo' leggere)
           curl -fsSL -X POST "https://www.googleapis.com/drive/v3/files/$FID/permissions" \
             -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
