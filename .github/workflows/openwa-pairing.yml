@@ -1,0 +1,139 @@
+name: OpenWA pairing code
+
+# Genera un pairing code WhatsApp per rigenerare la sessione OpenWA
+# (quando il secret OPENWA_BAILEYS_CREDS_B64 scade / non si ripristina piu').
+#
+# Uso:
+#  1. lanciare manualmente (workflow_dispatch) passando il numero di telefono
+#     in formato internazionale, SOLO cifre, senza + (es. 393331234567)
+#  2. leggere il PAIRING CODE dai log del run
+#  3. sul telefono: WhatsApp > Impostazioni > Dispositivi collegati >
+#     Collega un dispositivo > "Collega con il numero di telefono" e inserire il codice
+#  4. il workflow cifra creds.json con il secret OPENWA_API_KEY e stampa il blob nei log
+#  5. decifrare in locale e aggiornare il secret OPENWA_BAILEYS_CREDS_B64
+#     con il base64 del creds.json decifrato
+#
+# SICUREZZA (il repo e' pubblico, i log sono pubblici):
+#  - nei log finisce SOLO il pairing code (scade in pochi minuti ed e'
+#    inutilizzabile senza il telefono) e il blob CIFRATO delle credenziali
+#  - MAI creds.json in chiaro nei log
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone_number:
+        description: "Numero di telefono in formato internazionale, solo cifre senza + (es. 393331234567)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pairing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Cache npm (dipendenze OpenWA)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-openwa-v1
+
+      - name: Clona e compila OpenWA
+        run: |
+          set -euxo pipefail
+          rm -rf openwa
+          git clone --depth 1 https://github.com/rmyndharis/OpenWA openwa
+          cd openwa
+          # Niente Chromium: usiamo solo il motore Baileys
+          export PUPPETEER_SKIP_DOWNLOAD=1
+          npm ci --no-audit --no-fund --loglevel=error
+          npm run build
+
+      - name: Richiedi pairing code e attendi collegamento
+        env:
+          OPENWA_API_KEY: ${{ secrets.OPENWA_API_KEY }}
+          PHONE_NUMBER: ${{ inputs.phone_number }}
+        run: |
+          set -euo pipefail
+          cd openwa
+          mkdir -p data
+          printf 'ENGINE_TYPE=baileys\nPORT=2785\n' > .env
+          # La chiave API va passata via API_MASTER_KEY al primo avvio
+          API_MASTER_KEY="$OPENWA_API_KEY" node dist/main.js > ../openwa-server.log 2>&1 &
+          SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          API="http://127.0.0.1:2785"
+          # 1. attesa avvio server con motore baileys
+          for i in $(seq 1 24); do
+            if curl -sf -m 5 -H "x-api-key: $OPENWA_API_KEY" \
+                "$API/api/infra/engines/current" 2>/dev/null | grep -q baileys; then
+              echo "OpenWA avviato (motore baileys)"
+              break
+            fi
+            sleep 5
+            if [ "$i" = 24 ]; then
+              echo "::error::OpenWA non partito in tempo"
+              tail -n 30 ../openwa-server.log || true
+              exit 1
+            fi
+          done
+          # 2. crea sessione FRESCA (niente ripristino credenziali: e' un nuovo pairing)
+          SID=$(curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' -d '{"name":"retro-rewind"}' \
+            "$API/api/sessions" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          echo "sessione: $SID"
+          curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            "$API/api/sessions/$SID/start" > /dev/null
+          sleep 8
+          # 3. richiedi pairing code per il numero indicato
+          PAIR_RESP=$(curl -sf -m 20 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' \
+            -d "{\"phoneNumber\":\"$PHONE_NUMBER\"}" \
+            "$API/api/sessions/$SID/pairing-code")
+          CODE=$(echo "$PAIR_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['pairingCode'])")
+          echo "================================================================"
+          echo "PAIRING CODE: $CODE"
+          echo "Sul telefono: WhatsApp > Dispositivi collegati >"
+          echo "Collega un dispositivo > Collega con il numero di telefono"
+          echo "================================================================"
+          # 4. attesa collegamento (il codice scade dopo pochi minuti)
+          READY=0
+          for i in $(seq 1 180); do
+            ST=$(curl -s -m 10 -H "x-api-key: $OPENWA_API_KEY" \
+              "$API/api/sessions/$SID" 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null || echo "?")
+            if [ "$ST" = ready ]; then READY=1; break; fi
+            if [ "$ST" = failed ]; then
+              echo "::error::sessione fallita (stato failed)"
+              exit 1
+            fi
+            sleep 5
+          done
+          if [ "$READY" != 1 ]; then
+            echo "::error::collegamento non completato in tempo (codice probabilmente scaduto): rilancia il workflow"
+            exit 1
+          fi
+          echo "Telefono collegato!"
+          sleep 3
+          # 5. cifra creds.json con OPENWA_API_KEY e stampa il blob
+          #    (repo pubblico: MAI le credenziali in chiaro nei log)
+          CREDS=$(find data/baileys -name creds.json | head -n1)
+          if [ -z "${CREDS:-}" ]; then
+            echo "::error::creds.json non trovato"
+            find data/baileys | head -20 || true
+            exit 1
+          fi
+          BLOB=$(openssl enc -aes-256-cbc -pbkdf2 -pass env:OPENWA_API_KEY -in "$CREDS" | base64 -w0)
+          echo "================================================================"
+          echo "BLOB CIFRATO (creds.json cifrato con il secret OPENWA_API_KEY):"
+          echo "$BLOB"
+          echo "================================================================"
+          echo "Decifralo in locale con la tua OPENWA_API_KEY, poi aggiorna il"
+          echo "secret OPENWA_BAILEYS_CREDS_B64 con il base64 del creds.json decifrato."
