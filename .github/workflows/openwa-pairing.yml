@@ -6,17 +6,17 @@ name: OpenWA pairing code
 # Uso:
 #  1. lanciare manualmente (workflow_dispatch) passando il numero di telefono
 #     in formato internazionale, SOLO cifre, senza + (es. 393331234567)
-#  2. leggere il PAIRING CODE dai log del run
+#  2. scaricare l'artifact "pairing-code" dal run e leggere il codice
 #  3. sul telefono: WhatsApp > Impostazioni > Dispositivi collegati >
 #     Collega un dispositivo > "Collega con il numero di telefono" e inserire il codice
-#  4. il workflow cifra creds.json con il secret OPENWA_API_KEY e stampa il blob nei log
-#  5. decifrare in locale e aggiornare il secret OPENWA_BAILEYS_CREDS_B64
-#     con il base64 del creds.json decifrato
+#  4. a collegamento avvenuto, scaricare l'artifact "creds-encrypted",
+#     decifrarlo in locale con OPENWA_API_KEY e aggiornare il secret
+#     OPENWA_BAILEYS_CREDS_B64 con il base64 del creds.json decifrato
 #
-# SICUREZZA (il repo e' pubblico, i log sono pubblici):
-#  - nei log finisce SOLO il pairing code (scade in pochi minuti ed e'
-#    inutilizzabile senza il telefono) e il blob CIFRATO delle credenziali
-#  - MAI creds.json in chiaro nei log
+# SICUREZZA (il repo e' pubblico, log e artifact sono pubblici):
+#  - il pairing code scade in pochi minuti ed e' inutilizzabile senza il telefono
+#  - le credenziali viaggiano SOLO cifrate con il secret OPENWA_API_KEY
+#    (AES-256-CBC via openssl): MAI creds.json in chiaro
 
 on:
   workflow_dispatch:
@@ -56,7 +56,7 @@ jobs:
           npm ci --no-audit --no-fund --loglevel=error
           npm run build
 
-      - name: Richiedi pairing code e attendi collegamento
+      - name: Avvia OpenWA e richiedi pairing code
         env:
           OPENWA_API_KEY: ${{ secrets.OPENWA_API_KEY }}
           PHONE_NUMBER: ${{ inputs.phone_number }}
@@ -65,10 +65,10 @@ jobs:
           cd openwa
           mkdir -p data
           printf 'ENGINE_TYPE=baileys\nPORT=2785\n' > .env
-          # La chiave API va passata via API_MASTER_KEY al primo avvio
-          API_MASTER_KEY="$OPENWA_API_KEY" node dist/main.js > ../openwa-server.log 2>&1 &
-          SRV=$!
-          trap 'kill $SRV 2>/dev/null || true' EXIT
+          # Server in background: resta attivo per gli step successivi del job.
+          # La chiave API va passata via API_MASTER_KEY al primo avvio.
+          API_MASTER_KEY="$OPENWA_API_KEY" nohup node dist/main.js > ../openwa-server.log 2>&1 &
+          echo "server pid: $!"
           API="http://127.0.0.1:2785"
           # 1. attesa avvio server con motore baileys
           for i in $(seq 1 24); do
@@ -89,6 +89,7 @@ jobs:
             -H 'Content-Type: application/json' -d '{"name":"retro-rewind"}' \
             "$API/api/sessions" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
           echo "sessione: $SID"
+          echo "SID=$SID" >> "$GITHUB_ENV"
           curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
             "$API/api/sessions/$SID/start" > /dev/null
           sleep 8
@@ -103,7 +104,23 @@ jobs:
           echo "Sul telefono: WhatsApp > Dispositivi collegati >"
           echo "Collega un dispositivo > Collega con il numero di telefono"
           echo "================================================================"
-          # 4. attesa collegamento (il codice scade dopo pochi minuti)
+          printf '%s' "$CODE" > ../pairing-code.txt
+
+      - name: Pubblica pairing code (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pairing-code
+          path: pairing-code.txt
+          if-no-files-found: error
+
+      - name: Attendi collegamento e cifra credenziali
+        env:
+          OPENWA_API_KEY: ${{ secrets.OPENWA_API_KEY }}
+        run: |
+          set -euo pipefail
+          cd openwa
+          API="http://127.0.0.1:2785"
+          # Il codice scade dopo pochi minuti: attende il collegamento del telefono.
           READY=0
           for i in $(seq 1 180); do
             ST=$(curl -s -m 10 -H "x-api-key: $OPENWA_API_KEY" \
@@ -122,18 +139,25 @@ jobs:
           fi
           echo "Telefono collegato!"
           sleep 3
-          # 5. cifra creds.json con OPENWA_API_KEY e stampa il blob
-          #    (repo pubblico: MAI le credenziali in chiaro nei log)
+          # Cifra creds.json con OPENWA_API_KEY (repo pubblico: MAI in chiaro)
           CREDS=$(find data/baileys -name creds.json | head -n1)
           if [ -z "${CREDS:-}" ]; then
             echo "::error::creds.json non trovato"
             find data/baileys | head -20 || true
             exit 1
           fi
-          BLOB=$(openssl enc -aes-256-cbc -pbkdf2 -pass env:OPENWA_API_KEY -in "$CREDS" | base64 -w0)
-          echo "================================================================"
-          echo "BLOB CIFRATO (creds.json cifrato con il secret OPENWA_API_KEY):"
-          echo "$BLOB"
-          echo "================================================================"
-          echo "Decifralo in locale con la tua OPENWA_API_KEY, poi aggiorna il"
-          echo "secret OPENWA_BAILEYS_CREDS_B64 con il base64 del creds.json decifrato."
+          openssl enc -aes-256-cbc -pbkdf2 -pass env:OPENWA_API_KEY -in "$CREDS" \
+            | base64 -w0 > ../creds-encrypted.txt
+          echo "Blob cifrato pronto."
+
+      - name: Pubblica blob cifrato (artifact)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creds-encrypted
+          path: creds-encrypted.txt
+          if-no-files-found: error
+
+      - name: Spegni OpenWA
+        if: always()
+        run: pkill -f "dist/main.js" || true
