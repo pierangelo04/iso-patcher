@@ -103,11 +103,11 @@ env:
   # Dopo la build il file viene caricato su Google Drive (account dedicatoai,
   # link pubblico nel messaggio WhatsApp). L'upload su MEGA e' stato rimosso.
   OUTPUT_WBFS: RMCPTO.wbfs
-  # Dominio del server privato PierWFC (VPS 95.135.208.187, wildcard DNS
-  # *.dominio -> 95.135.208.187). DEVE essere <= 13 caratteri: la patch
-  # binaria di Code.pul lo scrive in-place al posto di "play.rwfc.net".
-  # TODO: sostituire con il dominio reale una volta acquistato.
-  PIERWFC_DOMAIN: "pierwfc.net"
+  # Indirizzo del server privato PierWFC (VPS). Puo' essere un dominio
+  # (<=13 caratteri, patch in-place) oppure l'IP diretto (la patch gestisce
+  # anche IPv4 rimuovendo il prefisso "nas." dagli URL). Senza dominio
+  # acquistato, si usa l'IP della VPS.
+  PIERWFC_ADDRESS: "95.135.208.187"
 
 jobs:
   check:
@@ -292,7 +292,7 @@ jobs:
         run: |
           set -euo pipefail
           # Patch binaria DATA-ONLY di Code.pul:
-          #  - "play.rwfc.net" -> $PIERWFC_DOMAIN (il payload viene scaricato
+          #  - "play.rwfc.net" -> $PIERWFC_ADDRESS (il payload viene scaricato
           #    dal nostro server invece che da quello ufficiale)
           #  - chiave pubblica PROD ufficiale -> chiave pubblica PierWFC
           #    (il payload del nostro server e' firmato con la nostra chiave)
@@ -301,13 +301,13 @@ jobs:
           # instrada le connessioni verso il server scelto.
           # FAIL-SAFE: se upstream cambia dominio o chiave, lo script esce
           # non-zero e la build si ferma (niente ISO rotta).
-          test -n "${PIERWFC_DOMAIN:-}" || (echo "::error::PIERWFC_DOMAIN non impostato"; exit 1)
+          test -n "${PIERWFC_ADDRESS:-}" || (echo "::error::PIERWFC_ADDRESS non impostato"; exit 1)
           python3 scripts/patch-code-pul.py \
             "RetroRewind6/Binaries/Code.pul" \
-            "$PIERWFC_DOMAIN" \
+            "$PIERWFC_ADDRESS" \
             scripts/official-key.bin \
             scripts/pierwfc-key.bin
-          echo "Code.pul patchato per il selettore server ($PIERWFC_DOMAIN)"
+          echo "Code.pul patchato per il selettore server ($PIERWFC_ADDRESS)"
 
       - name: Scarica ISO base da MEGA (PAL, RMCP01)
         shell: bash
