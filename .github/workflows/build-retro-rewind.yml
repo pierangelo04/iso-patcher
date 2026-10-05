@@ -103,6 +103,11 @@ env:
   # Dopo la build il file viene caricato su Google Drive (account dedicatoai,
   # link pubblico nel messaggio WhatsApp). L'upload su MEGA e' stato rimosso.
   OUTPUT_WBFS: RMCPTO.wbfs
+  # Dominio del server privato PierWFC (VPS 95.135.208.187, wildcard DNS
+  # *.dominio -> 95.135.208.187). DEVE essere <= 13 caratteri: la patch
+  # binaria di Code.pul lo scrive in-place al posto di "play.rwfc.net".
+  # TODO: sostituire con il dominio reale una volta acquistato.
+  PIERWFC_DOMAIN: "pierwfc.net"
 
 jobs:
   check:
@@ -282,6 +287,28 @@ jobs:
           test -f RetroRewind6/Binaries/Loader.pul
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
 
+      - name: Patch Code.pul per PierWFC (selettore server)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Patch binaria DATA-ONLY di Code.pul:
+          #  - "play.rwfc.net" -> $PIERWFC_DOMAIN (il payload viene scaricato
+          #    dal nostro server invece che da quello ufficiale)
+          #  - chiave pubblica PROD ufficiale -> chiave pubblica PierWFC
+          #    (il payload del nostro server e' firmato con la nostra chiave)
+          # Il payload custom servito dal nostro server mostra poi il dialog
+          # di selezione server (Retro Rewind / PierWFC) nel menu WFC e
+          # instrada le connessioni verso il server scelto.
+          # FAIL-SAFE: se upstream cambia dominio o chiave, lo script esce
+          # non-zero e la build si ferma (niente ISO rotta).
+          test -n "${PIERWFC_DOMAIN:-}" || (echo "::error::PIERWFC_DOMAIN non impostato"; exit 1)
+          python3 scripts/patch-code-pul.py \
+            "RetroRewind6/Binaries/Code.pul" \
+            "$PIERWFC_DOMAIN" \
+            scripts/official-key.bin \
+            scripts/pierwfc-key.bin
+          echo "Code.pul patchato per il selettore server ($PIERWFC_DOMAIN)"
+
       - name: Scarica ISO base da MEGA (PAL, RMCP01)
         shell: bash
         env:
@@ -405,14 +432,14 @@ jobs:
           grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
             || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$WBFS" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella build finale"; exit 1))
           echo "OK: $OUTPUT_WBFS (Dolphin + Wii) con ID RMCPTO, loader EUR Kamek v2 e file Retro Rewind."
-          echo "Server online: RetroWFC (rwfc.net) via Pulsar. Nessuna patch Wiimmfi applicata in questo workflow."
+          echo "Server online: selettore Retro Rewind / PierWFC (Code.pul patchato, payload custom). Nessuna patch Wiimmfi applicata in questo workflow."
           {
             echo "## Verifica build"
             echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
             echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) + dolpatch \`80005EFC\` verificato"
             echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
-            echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
+            echo "- Server: selettore Retro Rewind / PierWFC, nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload WBFS su Google Drive (link per WhatsApp)
@@ -514,7 +541,7 @@ jobs:
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
             echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (Drive: ${{ steps.drive.outputs.download_url }}) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
-            echo "- Server: RetroWFC (rwfc.net), nessuna patch Wiimmfi"
+            echo "- Server: selettore Retro Rewind / PierWFC, nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-whatsapp:
