@@ -545,6 +545,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-whatsapp:
+    # TEMPORANEAMENTE DISABILITATO su richiesta utente (2026-10-07)
+    # Per riabilitare: ripristinare la condizione originale
+    # if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
+    if: false
     # Invio WhatsApp del .wbfs appena buildato via OpenWA, che gira
     # DIRETTAMENTE sul runner (niente VPS, niente Baileys diretto):
     # il server parte in locale, la sessione viene ripristinata dal secret
