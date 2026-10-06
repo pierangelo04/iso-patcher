@@ -558,7 +558,7 @@ jobs:
     # Baileys in base64), WA_GROUP_ID (gia' esistente).
     # NESSUNA credenziale nel repo.
     needs: [check, build]
-    if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
+    # if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
