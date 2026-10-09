@@ -253,7 +253,22 @@ jobs:
           # NOTA: mega-get esige una cartella di destinazione ESISTENTE.
           rm -rf /tmp/megabuilder
           mkdir -p /tmp/megabuilder
-          mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder
+          # Retry del download MEGA (a volte mega-get si interrompe a meta'):
+          # riprova fino a 3 volte, con ls diagnostico tra un tentativo e l'altro.
+          for i in 1 2 3; do
+            echo "Tentativo mega-get #$i..."
+            if mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder; then
+              echo "mega-get riuscito al tentativo #$i"
+              break
+            fi
+            echo "mega-get fallito al tentativo #$i, contenuto parziale:"
+            ls -R /tmp/megabuilder 2>/dev/null | head -n 20
+            if [ "$i" = "3" ]; then
+              echo "::error::mega-get fallito dopo 3 tentativi"
+              exit 1
+            fi
+            sleep 5
+          done
           ls -R /tmp/megabuilder | head -n 50
           # Trova lo zip del builder in modo dinamico (la struttura della
           # cartella MEGA upstream puo' cambiare): cerca ricorsivamente.
