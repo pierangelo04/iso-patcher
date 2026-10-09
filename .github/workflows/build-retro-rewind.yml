@@ -346,9 +346,9 @@ jobs:
           #  - RetroRewind6/ (pack) nella directory corrente
           ls -lh MarioKart.iso
           test -d RetroRewind6 || (echo "::error::RetroRewind6/ mancante"; exit 1)
-          test -f create-rr-pal-full.sh || (echo "::error::create-rr-pal-full.sh mancante"; exit 1)
-          chmod a+x create-rr-pal-full.sh
-          ./create-rr-pal-full.sh 2>&1 | tee /tmp/builder.log
+          test -f create-rr-pal.sh || (echo "::error::create-rr-pal.sh mancante"; exit 1)
+          chmod a+x create-rr-pal.sh
+          ./create-rr-pal.sh 2>&1 | tee /tmp/builder.log
           echo "--- Output builder ---"
           ls -lh *.wbfs *.iso 2>/dev/null | head -10
           # Trova l'output (nome potrebbe variare)
