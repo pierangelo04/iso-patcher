@@ -334,40 +334,45 @@ jobs:
           wit LIST MarioKart.iso 2>&1 | head -n 30
           wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base da MEGA non contiene RMCP01 (PAL). Controlla il file in $MEGA_ISO_DIR."; exit 1)
 
-      - name: Compila l'ISO patchata (builder v6.13.0 ufficiale)
+      - name: Compila l'ISO patchata (manuale, builder v6.13.0)
         shell: bash
         run: |
           set -euxo pipefail
           df -h .
-          # Builder v6.13.0+: usa lo script ufficiale create-rr-pal-full.sh
-          # invece del vecchio flusso manuale (wit extract + copy-files.sh).
-          # Lo script si aspetta:
-          #  - MarioKart.iso (base PAL) nella directory corrente
-          #  - RetroRewind6/ (pack) nella directory corrente
-          ls -lh MarioKart.iso
+          rm -rf workdir.tmp new-image
+          # 1. Estrai ISO base
+          wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
+          test -d workdir.tmp
+          test -f workdir.tmp/setup.txt
+          rm -f MarioKart.iso
+          # 2. Copia i file Retro Rewind (pack) in workdir.tmp/files/
+          #    Il pack RetroRewind6/ contiene Binaries/, UI/, Race/, ecc.
           test -d RetroRewind6 || (echo "::error::RetroRewind6/ mancante"; exit 1)
-          test -f create-rr-pal.sh || (echo "::error::create-rr-pal.sh mancante"; exit 1)
-          chmod a+x create-rr-pal.sh
-          ./create-rr-pal.sh 2>&1 | tee /tmp/builder.log
-          echo "--- Output builder ---"
-          ls -lh *.wbfs *.iso 2>/dev/null | head -10
-          # Trova l'output (nome potrebbe variare)
-          OUT_CANDIDATE=$(ls -t *.wbfs 2>/dev/null | head -1)
-          if [ -z "$OUT_CANDIDATE" ]; then
-            OUT_CANDIDATE=$(ls -t *.iso 2>/dev/null | head -1)
+          cp -r RetroRewind6/* workdir.tmp/files/
+          echo "Pack copiato in workdir.tmp/files/"
+          # 3. Copia i file extra del builder (Strap.szs, bi2.bin, ecc.)
+          #    extra/Boot/Strap/Strap.szs -> workdir.tmp/files/Boot/Strap/ ?
+          #    Proviamo le posizioni standard
+          if [ -d extra ]; then
+            echo "Contenuto extra/:"
+            find extra -type f | head -20
+            # Copia ricorsiva: extra/* -> workdir.tmp/files/
+            # (la struttura extra/ rispecchia quella di files/)
+            cp -r extra/* workdir.tmp/files/ 2>/dev/null || true
+            echo "Extra copiato"
           fi
-          test -n "$OUT_CANDIDATE" || (echo "::error::Nessun output .wbfs/.iso dal builder"; exit 1)
-          echo "Trovato output: $OUT_CANDIDATE"
-          # Rinomina con la convenzione datata
+          # 4. Verifica file chiave
+          echo "--- Verifica ---"
+          test -f workdir.tmp/files/Binaries/Code.pul || (echo "::error::Code.pul mancante"; exit 1)
+          test -f workdir.tmp/files/Binaries/Loader.pul || (echo "::error::Loader.pul mancante"; exit 1)
+          ls workdir.tmp/files/Binaries/
+          # 5. Ricostruisci WBFS
           OUT="Mario Kart Wii(Retro Rewind)-Aggiornamento $(date -u +%d-%m-%Y).wbfs"
           echo "Nome output: $OUT"
           mkdir -p new-image
-          # Se e' ISO, converti in WBFS con wit; se gia' WBFS, copia
-          if [[ "$OUT_CANDIDATE" == *.iso ]]; then
-            wit copy "$OUT_CANDIDATE" --wbfs --DEST "new-image/$OUT" -ovv
-          else
-            cp "$OUT_CANDIDATE" "new-image/$OUT"
-          fi
+          wit copy workdir.tmp -T0 --DEST "new-image/$OUT" -ovv --links \
+            --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
+            --security-fix --name "Mario Kart Retro Rewind" --wbfs
           echo "OUTPUT_WBFS=$OUT" >> "$GITHUB_ENV"
           ls -lh new-image
           df -h .
