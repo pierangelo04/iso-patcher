@@ -103,11 +103,6 @@ env:
   # Dopo la build il file viene caricato su Google Drive (account dedicatoai,
   # link pubblico nel messaggio WhatsApp). L'upload su MEGA e' stato rimosso.
   OUTPUT_WBFS: RMCPTO.wbfs
-  # Indirizzo del server privato PierWFC (VPS). Puo' essere un dominio
-  # (<=13 caratteri, patch in-place) oppure l'IP diretto (la patch gestisce
-  # anche IPv4 rimuovendo il prefisso "nas." dagli URL). Senza dominio
-  # acquistato, si usa l'IP della VPS.
-  PIERWFC_ADDRESS: "95.135.208.187"
 
 jobs:
   check:
@@ -286,28 +281,6 @@ jobs:
           test -f RetroRewind6/Binaries/Code.pul
           test -f RetroRewind6/Binaries/Loader.pul
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
-
-      - name: Patch Code.pul per PierWFC (selettore server)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Patch binaria DATA-ONLY di Code.pul:
-          #  - "play.rwfc.net" -> $PIERWFC_ADDRESS (il payload viene scaricato
-          #    dal nostro server invece che da quello ufficiale)
-          #  - chiave pubblica PROD ufficiale -> chiave pubblica PierWFC
-          #    (il payload del nostro server e' firmato con la nostra chiave)
-          # Il payload custom servito dal nostro server mostra poi il dialog
-          # di selezione server (Retro Rewind / PierWFC) nel menu WFC e
-          # instrada le connessioni verso il server scelto.
-          # FAIL-SAFE: se upstream cambia dominio o chiave, lo script esce
-          # non-zero e la build si ferma (niente ISO rotta).
-          test -n "${PIERWFC_ADDRESS:-}" || (echo "::error::PIERWFC_ADDRESS non impostato"; exit 1)
-          python3 scripts/patch-code-pul.py \
-            "RetroRewind6/Binaries/Code.pul" \
-            "$PIERWFC_ADDRESS" \
-            scripts/official-key.bin \
-            scripts/pierwfc-key.bin
-          echo "Code.pul patchato per il selettore server ($PIERWFC_ADDRESS)"
 
       - name: Scarica ISO base da MEGA (PAL, RMCP01)
         shell: bash
@@ -545,10 +518,6 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-whatsapp:
-    # TEMPORANEAMENTE DISABILITATO su richiesta utente (2026-10-07)
-    # Per riabilitare: ripristinare la condizione originale
-    # if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
-    if: false
     # Invio WhatsApp del .wbfs appena buildato via OpenWA, che gira
     # DIRETTAMENTE sul runner (niente VPS, niente Baileys diretto):
     # il server parte in locale, la sessione viene ripristinata dal secret
@@ -558,7 +527,7 @@ jobs:
     # Baileys in base64), WA_GROUP_ID (gia' esistente).
     # NESSUNA credenziale nel repo.
     needs: [check, build]
-    # if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
+    if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
