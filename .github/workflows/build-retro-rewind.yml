@@ -254,8 +254,17 @@ jobs:
           rm -rf /tmp/megabuilder
           mkdir -p /tmp/megabuilder
           mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder
-          ls -R /tmp/megabuilder | head -n 30
-          unzip -q -o "/tmp/megabuilder/$BUILDER_SUBDIR/$BUILDER_ZIP"
+          ls -R /tmp/megabuilder | head -n 50
+          # Trova lo zip del builder in modo dinamico (la struttura della
+          # cartella MEGA upstream puo' cambiare): cerca ricorsivamente.
+          BUILDER_ZIP_PATH=$(find /tmp/megabuilder -name "$BUILDER_ZIP" -print -quit 2>/dev/null)
+          if [ -z "$BUILDER_ZIP_PATH" ]; then
+            echo "::error::Builder zip '$BUILDER_ZIP' non trovato nella cartella MEGA scaricata. Struttura cambiata upstream?"
+            find /tmp/megabuilder -name "*.zip" 2>/dev/null | head -20
+            exit 1
+          fi
+          echo "Trovato builder: $BUILDER_ZIP_PATH"
+          unzip -q -o "$BUILDER_ZIP_PATH"
           chmod a+x *.sh
           ls -R extra/Boot/Loaders
           test -f extra/Boot/Loaders/EUR/main.dol
