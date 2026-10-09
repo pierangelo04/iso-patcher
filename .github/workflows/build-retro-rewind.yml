@@ -3,7 +3,7 @@ name: Build & upload Retro Rewind ISO
 # Workflow automatizzato per ISO Retro Rewind (RetroWFC, NON Wiimmfi).
 # Procedura manuale di riferimento (video https://www.youtube.com/watch?v=z5PW9iPkZfQ):
 #  1. scarica Retro Rewind full da wiki (rwfc.net) -> RetroRewind6/
-#  2. scarica ISO builder "Wiimm Edition for v6.12.5 and above" dal link MEGA
+#  2. scarica ISO builder "Wiimm Edition for v6.13.0 and above" dal link MEGA
 #     nella sidebar wiki (https://mkwiiki.org/wiki/Retro_Rewind)
 #  3. installa Wiimm ISO Tools (wit)
 #  4. metti Mario Kart Wii .iso/.wbfs nella stessa cartella
@@ -24,7 +24,7 @@ name: Build & upload Retro Rewind ISO
 #  (Retro-Rewind-Team/iso-patcher -> updatedbuilder.zip, 05/2026) contiene un
 #  main.dol con Kamek Loader vecchio, incompatibile con i .pul v2 del pack
 #  corrente. La wiki ufficiale dice di usare l'archivio
-#  "Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip" dal link
+#  "Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip" dal link
 #  MEGA (https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w), che contiene
 #  main.dol aggiornati (09/2026), SRC_TYPE=EUR per PAL, riga dolpatch
 #  `80005EFC=0000000A` e flag `--security-fix`.
@@ -79,9 +79,9 @@ env:
   PACK_VERSION_URL: https://update.rwfc.net/RetroRewind/RetroRewindVersion.txt
   # ISO builder UFFICIALE aggiornato (Kamek Loader v2, fix PAL->EUR):
   # cartella MEGA pubblica linkata dalla wiki. Lo zip contiene
-  # "Retro Rewind ISO Builder/Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip".
+  # "Retro Rewind ISO Builder/Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip".
   BUILDER_MEGA_LINK: https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w
-  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.12.5 and above.zip
+  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip
   BUILDER_SUBDIR: Retro Rewind ISO Builder
   # md5 del main.dol EUR VECCHIO (GitHub 05/2026, Kamek v1): se il builder
   # scaricato lo contiene ancora, la build deve fallire invece di produrre
@@ -244,7 +244,7 @@ jobs:
           fi
           mega-get --version 2>&1 | head -n2 || true
 
-      - name: Prepara il patcher (ISO Builder v6.12.5+ da MEGA)
+      - name: Prepara il patcher (ISO Builder v6.13.0+ da MEGA)
         shell: bash
         run: |
           set -euxo pipefail
@@ -358,7 +358,7 @@ jobs:
           # Usiamo quindi SRC_TYPE=EUR e verifichiamo con cmp.
           ls -lh "extra/Boot/Loaders/EUR/main.dol"
           SRC_TYPE=EUR ./copy-files.sh 2>&1 | tee /tmp/copyfiles.log
-          echo "--- Verifica loader Retro (builder v6.12.5+: dolpatch 80005EFC in-place) ---"
+          echo "--- Verifica loader Retro (builder v6.13.0+: dolpatch 80005EFC in-place) ---"
           ls -lh workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol extra/thp/bi2.bin workdir.tmp/sys/bi2.bin
           # Il builder nuovo applica `wit dolpatch main.dol 80005EFC=0000000A`
           # DOPO la copia: stesso file, stessa dimensione, ma alcuni byte
@@ -534,7 +534,7 @@ jobs:
           {
             echo "## Retro Rewind build (RetroWFC) - Dolphin + Wii"
             echo "- Pack: v${{ needs.check.outputs.pack_version }}"
-            echo "- Builder: MEGA ufficiale v6.12.5+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
+            echo "- Builder: MEGA ufficiale v6.13.0+ (Kamek v2, impronta \`${{ needs.check.outputs.builder_fp }}\`)"
             echo "- Upstream GitHub: \`${{ needs.check.outputs.upstream_sha }}\` (solo monitoraggio)"
             echo "- Regione: PAL (loader EUR, GameID RMCPTO)"
             echo "- File unico: \`${{ env.OUTPUT_WBFS }}\` (Drive: ${{ steps.drive.outputs.download_url }}) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
