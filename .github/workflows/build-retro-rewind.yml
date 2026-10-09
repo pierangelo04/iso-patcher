@@ -334,40 +334,40 @@ jobs:
           wit LIST MarioKart.iso 2>&1 | head -n 30
           wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base da MEGA non contiene RMCP01 (PAL). Controlla il file in $MEGA_ISO_DIR."; exit 1)
 
-      - name: Compila l'ISO patchata (PAL -> loader EUR, RetroWFC)
+      - name: Compila l'ISO patchata (builder v6.13.0 ufficiale)
         shell: bash
         run: |
           set -euxo pipefail
           df -h .
-          rm -rf workdir.tmp new-image
-          wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
-          test -d workdir.tmp
-          test -f workdir.tmp/setup.txt
-          rm -f MarioKart.iso
-          # Builder v6.13.0+: usa Strap.szs, non piu' main.dol loader.
-          # Esegue copy-files.sh e verifica base.
-          ./copy-files.sh 2>&1 | tee /tmp/copyfiles.log
-          echo "--- Verifica base post copy-files.sh ---"
-          test -d workdir.tmp/sys || (echo "::error::workdir.tmp/sys mancante dopo copy-files.sh"; exit 1)
-          ls -lh workdir.tmp/sys/ | head -20
-          echo "--- Verifica file Retro Rewind in workdir ---"
-          test -f workdir.tmp/files/Binaries/Code.pul
-          test -f workdir.tmp/files/Binaries/Loader.pul
-          test -f workdir.tmp/files/Scene/UI/Title.szs
-          test -d workdir.tmp/files/Race/Course
-          ls workdir.tmp/files/Binaries/
-          # NOTA: non usare MAI `wit --patch-wiimmfi` / dolpatch Wiimmfi qui:
-          # il server online e' fornito da Pulsar/RetroWFC (rwfc.net), non da Wiimmfi.
-          # `--security-fix` come negli script ufficiali (firma ticket/TMD).
-          # UNICO contenitore .wbfs: lo leggono sia Dolphin sia i loader Wii.
-          # Nome datato del giorno build (UTC).
+          # Builder v6.13.0+: usa lo script ufficiale create-rr-pal-full.sh
+          # invece del vecchio flusso manuale (wit extract + copy-files.sh).
+          # Lo script si aspetta:
+          #  - MarioKart.iso (base PAL) nella directory corrente
+          #  - RetroRewind6/ (pack) nella directory corrente
+          ls -lh MarioKart.iso
+          test -d RetroRewind6 || (echo "::error::RetroRewind6/ mancante"; exit 1)
+          test -f create-rr-pal-full.sh || (echo "::error::create-rr-pal-full.sh mancante"; exit 1)
+          chmod a+x create-rr-pal-full.sh
+          ./create-rr-pal-full.sh 2>&1 | tee /tmp/builder.log
+          echo "--- Output builder ---"
+          ls -lh *.wbfs *.iso 2>/dev/null | head -10
+          # Trova l'output (nome potrebbe variare)
+          OUT_CANDIDATE=$(ls -t *.wbfs 2>/dev/null | head -1)
+          if [ -z "$OUT_CANDIDATE" ]; then
+            OUT_CANDIDATE=$(ls -t *.iso 2>/dev/null | head -1)
+          fi
+          test -n "$OUT_CANDIDATE" || (echo "::error::Nessun output .wbfs/.iso dal builder"; exit 1)
+          echo "Trovato output: $OUT_CANDIDATE"
+          # Rinomina con la convenzione datata
           OUT="Mario Kart Wii(Retro Rewind)-Aggiornamento $(date -u +%d-%m-%Y).wbfs"
           echo "Nome output: $OUT"
-          rm -rf new-image
-          wit copy workdir.tmp -T0 --DEST new-image/%X -ovv --links \
-            --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
-            --security-fix --name "Mario Kart Retro Rewind" --wbfs
-          find new-image -maxdepth 1 -name '*.wbfs' -exec mv {} "new-image/$OUT" \;
+          mkdir -p new-image
+          # Se e' ISO, converti in WBFS con wit; se gia' WBFS, copia
+          if [[ "$OUT_CANDIDATE" == *.iso ]]; then
+            wit copy "$OUT_CANDIDATE" --wbfs --DEST "new-image/$OUT" -ovv
+          else
+            cp "$OUT_CANDIDATE" "new-image/$OUT"
+          fi
           echo "OUTPUT_WBFS=$OUT" >> "$GITHUB_ENV"
           ls -lh new-image
           df -h .
@@ -391,15 +391,15 @@ jobs:
           # prefisso "/" sia senza.
           grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
             || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$WBFS" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella build finale"; exit 1))
-          echo "OK: $OUTPUT_WBFS (Dolphin + Wii) con ID RMCPTO, loader EUR Kamek v2 e file Retro Rewind."
-          echo "Server online: selettore Retro Rewind / PierWFC (Code.pul patchato, payload custom). Nessuna patch Wiimmfi applicata in questo workflow."
+          echo "OK: $OUTPUT_WBFS (Dolphin + Wii) con ID RMCPTO e file Retro Rewind."
+          echo "Server online: RetroWFC ufficiale (nessuna patch Wiimmfi applicata)."
           {
             echo "## Verifica build"
             echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
             echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
-            echo "- Loader: \`extra/Boot/Loaders/EUR/main.dol\` (Kamek v2) + dolpatch \`80005EFC\` verificato"
+            echo "- Builder: ufficiale v6.13.0+ (Strap.szs)"
             echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
-            echo "- Server: selettore Retro Rewind / PierWFC, nessuna patch Wiimmfi"
+            echo "- Server: RetroWFC ufficiale, nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload WBFS su Google Drive (link per WhatsApp)
