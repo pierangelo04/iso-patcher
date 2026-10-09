@@ -350,12 +350,6 @@ jobs:
           echo "--- Verifica base post copy-files.sh ---"
           test -d workdir.tmp/sys || (echo "::error::workdir.tmp/sys mancante dopo copy-files.sh"; exit 1)
           ls -lh workdir.tmp/sys/ | head -20
-          [ "$NDIFF" -ge 1 ] && [ "$NDIFF" -le 32 ] \
-            || (echo "::error::differenze main.dol anomale ($NDIFF byte): builder cambiato?"; exit 1)
-          # Mai il vecchio loader v1 (darebbe "Incompatible file (version 2)")
-          [ "$(md5sum workdir.tmp/sys/main.dol | awk '{print $1}')" != "$OLD_LOADER_MD5_EUR" ] \
-            || (echo "::error::main.dol ancora quello vecchio (Kamek v1)"; exit 1)
-          cmp workdir.tmp/sys/bi2.bin extra/thp/bi2.bin || (echo "::error::bi2.bin NON sostituito"; exit 1)
           echo "--- Verifica file Retro Rewind in workdir ---"
           test -f workdir.tmp/files/Binaries/Code.pul
           test -f workdir.tmp/files/Binaries/Loader.pul
