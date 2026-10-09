@@ -280,6 +280,9 @@ jobs:
           fi
           echo "Trovato builder: $BUILDER_ZIP_PATH"
           unzip -q -o "$BUILDER_ZIP_PATH"
+          echo "=== STRUTTURA BUILDER v6.13.0 (diagnostica) ==="
+          ls -R | head -n 80
+          echo "=== FINE STRUTTURA ==="
           chmod a+x *.sh
           ls -R extra/Boot/Loaders
           test -f extra/Boot/Loaders/EUR/main.dol
