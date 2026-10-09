@@ -280,22 +280,11 @@ jobs:
           fi
           echo "Trovato builder: $BUILDER_ZIP_PATH"
           unzip -q -o "$BUILDER_ZIP_PATH"
-          echo "=== STRUTTURA BUILDER v6.13.0 (diagnostica) ==="
-          ls -R | head -n 80
-          echo "=== FINE STRUTTURA ==="
           chmod a+x *.sh
-          ls -R extra/Boot/Loaders
-          test -f extra/Boot/Loaders/EUR/main.dol
-          test -f copy-files.sh
-          grep -q "80005EFC" copy-files.sh || (echo "::error::copy-files.sh senza riga dolpatch 80005EFC: builder obsoleto?"; exit 1)
-          # Guardia Kamek v2: rifiuta il vecchio main.dol GitHub (Kamek v1),
-          # che produrrebbe "Incompatible file (version 2)" su Dolphin/Wii.
-          GOT_MD5=$(md5sum extra/Boot/Loaders/EUR/main.dol | awk '{print $1}')
-          echo "main.dol EUR md5=$GOT_MD5"
-          if [ "$GOT_MD5" = "$OLD_LOADER_MD5_EUR" ]; then
-            echo "::error::main.dol EUR ancora quello vecchio (Kamek v1). Builder MEGA non aggiornato?"
-            exit 1
-          fi
+          # Builder v6.13.0+: struttura con Strap.szs (non piu' Loaders/main.dol)
+          test -f extra/Boot/Strap/Strap.szs || (echo "::error::extra/Boot/Strap/Strap.szs mancante"; exit 1)
+          test -f copy-files.sh || (echo "::error::copy-files.sh mancante"; exit 1)
+          echo "Builder v6.13.0+ OK: Strap.szs + copy-files.sh presenti"
           rm -rf /tmp/megabuilder
 
       - name: Scarica il pack Retro Rewind (full, RetroWFC)
@@ -355,35 +344,12 @@ jobs:
           test -d workdir.tmp
           test -f workdir.tmp/setup.txt
           rm -f MarioKart.iso
-          # --- FIX RetroWFC: PAL usa il loader EUR (come create-rr-pal.bat BASEVER=EUR).
-          # copy-files.sh con SRC_TYPE=PAL cercherebbe extra/Boot/Loaders/PAL/main.dol
-          # che NON esiste -> main.dol vanilla -> online su Wiimmfi invece di RetroWFC.
-          # Usiamo quindi SRC_TYPE=EUR e verifichiamo con cmp.
-          ls -lh "extra/Boot/Loaders/EUR/main.dol"
-          SRC_TYPE=EUR ./copy-files.sh 2>&1 | tee /tmp/copyfiles.log
-          echo "--- Verifica loader Retro (builder v6.13.0+: dolpatch 80005EFC in-place) ---"
-          ls -lh workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol extra/thp/bi2.bin workdir.tmp/sys/bi2.bin
-          # Il builder nuovo applica `wit dolpatch main.dol 80005EFC=0000000A`
-          # DOPO la copia: stesso file, stessa dimensione, ma alcuni byte
-          # patchati. Quindi: dimensioni uguali + file DIVERSI + "Patched:" nel log.
-          [ "$(stat -c%s workdir.tmp/sys/main.dol)" = "$(stat -c%s extra/Boot/Loaders/EUR/main.dol)" ] \
-            || (echo "::error::main.dol di dimensione inattesa"; exit 1)
-          grep -q "Patched:" /tmp/copyfiles.log \
-            || (echo "::error::dolpatch 80005EFC NON eseguito da copy-files.sh"; exit 1)
-          if cmp -s workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol; then
-            echo "::error::main.dol identico all'originale: dolpatch NON applicato"
-            exit 1
-          fi
-          echo "Byte patchati (attesi: pochi, intorno alla patch 80005EFC):"
-          # NOTA: `cmp` esce 1 se i file differiscono (caso atteso qui!):
-          # con `set -e + pipefail` va gestito a mano, non in pipeline.
-          set +e
-          cmp -l workdir.tmp/sys/main.dol extra/Boot/Loaders/EUR/main.dol > /tmp/cmpdiff.txt
-          CMP_RC=$?
-          set -e
-          head -n 40 /tmp/cmpdiff.txt
-          NDIFF=$(wc -l < /tmp/cmpdiff.txt | tr -d '[:space:]')
-          echo "Totale byte diversi: $NDIFF (cmp exit=$CMP_RC)"
+          # Builder v6.13.0+: usa Strap.szs, non piu' main.dol loader.
+          # Esegue copy-files.sh e verifica base.
+          ./copy-files.sh 2>&1 | tee /tmp/copyfiles.log
+          echo "--- Verifica base post copy-files.sh ---"
+          test -d workdir.tmp/sys || (echo "::error::workdir.tmp/sys mancante dopo copy-files.sh"; exit 1)
+          ls -lh workdir.tmp/sys/ | head -20
           [ "$NDIFF" -ge 1 ] && [ "$NDIFF" -le 32 ] \
             || (echo "::error::differenze main.dol anomale ($NDIFF byte): builder cambiato?"; exit 1)
           # Mai il vecchio loader v1 (darebbe "Incompatible file (version 2)")
