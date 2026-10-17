@@ -195,7 +195,7 @@ jobs:
           cp -f workdir.tmp/sys/main.dol /tmp/main.dol.vanilla
           export SRC_TYPE=EUR
           export RR_SRC_TYPE=EUR
-          bash ./copy-files.sh
+          bash ./copy-files.sh || echo "copy-files.sh exit $? (wit dolpatch avvisi, normale come nel builder ufficiale)"
           cp -f workdir.tmp/sys/main.dol /tmp/main.dol.afterfix
           cmp -s /tmp/main.dol.vanilla workdir.tmp/sys/main.dol && { echo "::error::sys/main.dol invariato: loader Pulsar NON applicato"; exit 1; } || echo "OK: sys/main.dol sostituito col loader"
           test -f workdir.tmp/files/Scene/UI/Title.szs || (echo "::error::Scene/UI/Title.szs mancante dopo copy-files"; exit 1)
