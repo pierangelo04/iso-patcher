@@ -34,7 +34,7 @@ def find(words, w):
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
-t0 = time.time(); n = 0; last = ""; mainclicks = 0; unk = 0
+t0 = time.time(); n = 0; last = ""; mainclicks = 0; wfcclicks = 0; unk = 0
 while time.time() - t0 < SECS:
     n += 1
     p = shot(n)
@@ -42,7 +42,12 @@ while time.time() - t0 < SECS:
     txt = " ".join(t for t, *_ in words)
     action = "-"
     def has(s): return s.lower() in txt.lower()
-    if has("Main Menu") and find(words, "WFC"):
+    if has("Multiplayer") and has("WFC") and wfcclicks < 4:
+        wfcclicks += 1
+        yy = find(words, "WFC")
+        x, y = yy if yy else (640, 490)
+        click(x, y + 15); action = f"click Retro WFC {x},{y+15}"
+    elif has("Main Menu") and find(words, "WFC"):
         x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
     elif has("sure") and has("OK"):
         yy = find(words, "Yes")
