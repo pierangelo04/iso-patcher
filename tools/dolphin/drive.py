@@ -42,10 +42,10 @@ while time.time() - t0 < SECS:
     txt = " ".join(t for t, *_ in words)
     action = "-"
     def has(s): return s.lower() in txt.lower()
-    if has("Multiplayer") and has("WFC") and wfcclicks < 4:
+    if has("Multiplayer") and wfcclicks < 4 and unk >= 0:
         wfcclicks += 1
         yy = find(words, "WFC")
-        x, y = yy if yy else (640, 490)
+        x, y = yy if yy else (638, 475)
         click(x, y + 15); action = f"click Retro WFC {x},{y+15}"
     elif has("Main Menu") and find(words, "WFC"):
         x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
