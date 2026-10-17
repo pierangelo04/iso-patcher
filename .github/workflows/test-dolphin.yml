@@ -47,7 +47,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb DISPLAY=:99
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
-          printf '[Options]\\nWriteToFile = True\\nVerbosity = 3\\nWriteToConsole = False\\n[Logs]\\nOSREPORT = True\\nBOOT = True\\nIOS = True\\nIOS_NET = True\\nIOS_FS = True\\nWII_IPC = True\\nCOMMON = True\\nDVDINTERFACE = True\\n' > $D/Config/Logger.ini
+          printf '[Options]\nWriteToFile = True\nVerbosity = 3\nWriteToConsole = False\n[Logs]\nOSREPORT = True\nBOOT = True\nIOS = True\nIOS_NET = True\nIOS_FS = True\nWII_IPC = True\nCOMMON = True\nDVDINTERFACE = True\n' > $D/Config/Logger.ini
           dolphin-emu -b -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
           N=$(( SECS / 20 ))
