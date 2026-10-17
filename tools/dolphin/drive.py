@@ -34,7 +34,7 @@ def find(words, w):
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
-t0 = time.time(); n = 0; last = ""; mainclicks = 0; wfcclicks = 0; unk = 0
+t0 = time.time(); n = 0; last = ""; mainclicks = 0; wfcclicks = 0; unk = 0; online = False
 while time.time() - t0 < SECS:
     n += 1
     p = shot(n)
@@ -42,8 +42,8 @@ while time.time() - t0 < SECS:
     txt = " ".join(t for t, *_ in words)
     action = "-"
     def has(s): return s.lower() in txt.lower()
-    if has("Multiplayer") and wfcclicks < 4 and unk >= 0:
-        wfcclicks += 1
+    if has("Multiplayer") and wfcclicks < 1:
+        wfcclicks += 1; online = True
         yy = find(words, "WFC")
         x, y = 600, 510
         click(x, y + 15); action = f"click Retro WFC {x},{y+15}"
@@ -57,6 +57,8 @@ while time.time() - t0 < SECS:
         x, y = find(words, "Next"); click(x, y); action = f"click Next {x},{y}"
     elif find(words, "OK") and not has("Time Trial"):
         x, y = find(words, "OK"); click(x, y); action = f"click OK {x},{y}"
+    elif online and not (has("sure") or has("Yes") or has("agree") or has("Agree")):
+        action = "wait online"
     elif has("Settings") and has("Back") and mainclicks < 6:
         mainclicks += 1
         click(505, 320); action = "click slot licenza 1 (RR)"
