@@ -21,11 +21,11 @@ jobs:
           DRIVE_REFRESH_TOKEN: ${{ secrets.DRIVE_REFRESH_TOKEN }}
         run: |
           ls -la art
-          F=$(ls art/*.wbfs | head -1)
+          F=$(find art -name "*.wbfs" | head -1)
           AT=$(curl -s -X POST https://oauth2.googleapis.com/token -d grant_type=refresh_token -d refresh_token=$DRIVE_REFRESH_TOKEN -d client_id=$DRIVE_CLIENT_ID -d client_secret=$DRIVE_CLIENT_SECRET | jq -r .access_token)
           NAME="Mario Kart Wii (Retro Rewind PierWFC) - build corretta 17-10-2026.wbfs"
           LOC=$(curl -s -D - -o /dev/null -X POST "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable" -H "Authorization: Bearer $AT" -H "Content-Type: application/json" -H "X-Upload-Content-Type: application/octet-stream" -d "{\"name\":\"$NAME\"}" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
-          curl -s -X PUT "$LOC" -H "Content-Length: $(stat -c%s "$F")" --data-binary @"$F" | tee /tmp/up.json | jq -c '{id,name,size}'
+          curl -s -X PUT "$LOC" -T "$F" | tee /tmp/up.json | jq -c '{id,name,size}'
           ID=$(jq -r .id /tmp/up.json)
           curl -s -X POST "https://www.googleapis.com/drive/v3/files/$ID/permissions" -H "Authorization: Bearer $AT" -H "Content-Type: application/json" -d '{"role":"reader","type":"anyone"}' | jq -c .
           curl -s -H "Authorization: Bearer $AT" "https://www.googleapis.com/drive/v3/files/$ID?fields=name,size,webViewLink" | jq -c .
