@@ -2,9 +2,11 @@ name: Build Retro Rewind ISO (PierWFC server)
 
 # Seconda versione della ISO Retro Rewind che si collega al server WFC
 # personale (PierWFC, sul VPS) invece che a RetroWFC ufficiale.
-# Workflow SEPARATO da build-retro-rewind.yml: non lo sostituisce, non fa
-# commit, non carica su Drive e non invia WhatsApp. Parte solo a mano
-# (Actions > Run workflow) e il file finisce come artifact della run.
+# Workflow SEPARATO da build-retro-rewind.yml: non lo sostituisce e non fa
+# commit. Parte solo a mano (Actions > Run workflow). Il file va su Google
+# Drive (stessi secrets della build normale, link pubblico), come artifact
+# della run, e il link viene mandato su WhatsApp. Su Drive si tengono solo
+# gli ultimi 2 file PierWFC; quelli della build normale non vengono toccati.
 #
 # Cosa cambia rispetto alla build normale: dopo aver scaricato il pack
 # ufficiale, tools/pierwfc/patch_code_pul.py modifica Binaries/Code.pul
@@ -37,6 +39,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    outputs:
+      download_url: ${{ steps.drive.outputs.download_url }}
+      wbfs_name: ${{ steps.wbfsname.outputs.wbfs_name }}
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -239,6 +244,66 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
 
+      - name: Upload WBFS su Google Drive (link per WhatsApp)
+        id: drive
+        shell: bash
+        env:
+          DRIVE_CLIENT_ID: ${{ secrets.DRIVE_CLIENT_ID }}
+          DRIVE_CLIENT_SECRET: ${{ secrets.DRIVE_CLIENT_SECRET }}
+          DRIVE_REFRESH_TOKEN: ${{ secrets.DRIVE_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          WBFS="new-image/$OUTPUT_WBFS"
+          # 1. access token dal refresh token
+          AT=$(curl -fsSL -X POST https://oauth2.googleapis.com/token \
+            --data-urlencode "grant_type=refresh_token" \
+            --data-urlencode "refresh_token=$DRIVE_REFRESH_TOKEN" \
+            --data-urlencode "client_id=$DRIVE_CLIENT_ID" \
+            --data-urlencode "client_secret=$DRIVE_CLIENT_SECRET" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+          # 2. upload del file in streaming (uploadType=media con --upload-file:
+          # NON usare --data-binary multipart: caricherebbe i 3,3 GB in RAM)
+          FID=$(curl -fsSL -X POST -T "$WBFS" \
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id" \
+            -H "Authorization: Bearer $AT" \
+            -H "Content-Type: application/octet-stream" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "File caricato su Drive, ID: $FID"
+          # 2b. imposta il nome file (uploadType=media non accetta metadati)
+          META=$(python3 -c "import json; print(json.dumps({'name': '$OUTPUT_WBFS'}))")
+          curl -fsSL -X PATCH "https://www.googleapis.com/drive/v3/files/$FID" \
+            -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
+            -d "$META" > /dev/null
+          # 3. link pubblico (chiunque abbia il link puo' leggere)
+          curl -fsSL -X POST "https://www.googleapis.com/drive/v3/files/$FID/permissions" \
+            -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
+            -d '{"type":"anyone","role":"reader"}' > /dev/null
+          URL=$(curl -fsSL "https://www.googleapis.com/drive/v3/files/$FID?fields=webViewLink" \
+            -H "Authorization: Bearer $AT" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['webViewLink'])")
+          echo "Link Drive: $URL"
+          echo "download_url=$URL" >> "$GITHUB_OUTPUT"
+          # 4. pulizia: tengo solo i 2 file piu' recenti (quota Drive limitata; solo file PierWFC, quelli della build normale non si toccano)
+          IDS=$(curl -fsSL "https://www.googleapis.com/drive/v3/files?pageSize=10&orderBy=createdTime%20desc&fields=files(id)&q=name%20contains%20%27PierWFC%27%20and%20trashed%3Dfalse" \
+            -H "Authorization: Bearer $AT" \
+            | python3 -c "
+          import sys, json
+          ids = [f['id'] for f in json.load(sys.stdin).get('files', [])]
+          print(' '.join(ids[2:]))
+          ")
+          for OLD in $IDS; do
+            [ "$OLD" = "$FID" ] && continue
+            if curl -fsSL -X DELETE "https://www.googleapis.com/drive/v3/files/$OLD" \
+              -H "Authorization: Bearer $AT" > /dev/null; then
+              echo "Rimosso vecchio file da Drive: $OLD"
+            fi
+          done
+
+      - name: Esponi nome WBFS per la notifica
+        id: wbfsname
+        shell: bash
+        run: echo "wbfs_name=$OUTPUT_WBFS" >> "$GITHUB_OUTPUT"
+
       - name: Carica il WBFS come artifact
         uses: actions/upload-artifact@v4
         with:
@@ -246,3 +311,116 @@ jobs:
           path: new-image/*.wbfs
           retention-days: 7
           compression-level: 0
+
+  notify-whatsapp:
+    # Invio WhatsApp del .wbfs appena buildato via OpenWA, che gira
+    # DIRETTAMENTE sul runner (niente VPS, niente Baileys diretto):
+    # il server parte in locale, la sessione viene ripristinata dal secret
+    # OPENWA_BAILEYS_CREDS_B64 e l'invio avviene via API REST su 127.0.0.1.
+    # Gira solo se la build e' andata a buon fine (o in modalita test_whatsapp).
+    # Secrets richiesti: OPENWA_API_KEY, OPENWA_BAILEYS_CREDS_B64 (creds.json
+    # Baileys in base64), WA_GROUP_ID (gia' esistente).
+    # NESSUNA credenziale nel repo.
+    needs: [build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: openwa-notify
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Cache npm (dipendenze OpenWA)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-openwa-v1
+
+      - name: Clona e compila OpenWA
+        run: |
+          set -euxo pipefail
+          rm -rf openwa
+          git clone --depth 1 https://github.com/rmyndharis/OpenWA openwa
+          cd openwa
+          # Niente Chromium: usiamo solo il motore Baileys
+          export PUPPETEER_SKIP_DOWNLOAD=1
+          npm ci --no-audit --no-fund --loglevel=error
+          npm run build
+
+      - name: Avvia OpenWA e invia notifica
+        env:
+          OPENWA_API_KEY: ${{ secrets.OPENWA_API_KEY }}
+          OPENWA_BAILEYS_CREDS_B64: ${{ secrets.OPENWA_BAILEYS_CREDS_B64 }}
+          WA_GROUP_ID: ${{ secrets.WA_GROUP_ID }}
+          DRIVE_URL: ${{ needs.build.outputs.download_url }}
+          WBFS_NAME: ${{ needs.build.outputs.wbfs_name }}
+        run: |
+          set -euo pipefail
+          cd openwa
+          mkdir -p data
+          printf 'ENGINE_TYPE=baileys\nPORT=2785\n' > .env
+          # La chiave API va passata via API_MASTER_KEY al primo avvio
+          # (data/.api-key viene scritto dal server, non letto)
+          API_MASTER_KEY="$OPENWA_API_KEY" node dist/main.js > ../openwa-server.log 2>&1 &
+          SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          API="http://127.0.0.1:2785"
+          # 1. attesa avvio server con motore baileys
+          for i in $(seq 1 24); do
+            if curl -sf -m 5 -H "x-api-key: $OPENWA_API_KEY" \
+                "$API/api/infra/engines/current" 2>/dev/null | grep -q baileys; then
+              echo "OpenWA avviato (motore baileys)"
+              break
+            fi
+            sleep 5
+            if [ "$i" = 24 ]; then
+              echo "::error::OpenWA non partito in tempo"
+              tail -n 30 ../openwa-server.log || true
+              exit 1
+            fi
+          done
+          # 2. crea sessione e ripristina le credenziali Baileys dal secret
+          SID=$(curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' -d '{"name":"retro-rewind"}' \
+            "$API/api/sessions" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          echo "sessione: $SID"
+          mkdir -p "data/baileys/$SID"
+          printf '%s' "$OPENWA_BAILEYS_CREDS_B64" | base64 -d > "data/baileys/$SID/creds.json"
+          chmod 600 "data/baileys/$SID/creds.json"
+          curl -sf -m 15 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            "$API/api/sessions/$SID/start" > /dev/null
+          # 3. attesa connessione a WhatsApp
+          for i in $(seq 1 36); do
+            ST=$(curl -s -m 10 -H "x-api-key: $OPENWA_API_KEY" \
+              "$API/api/sessions/$SID" 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null || echo "?")
+            echo "stato sessione: $ST"
+            [ "$ST" = ready ] && break
+            if [ "$ST" = qr_ready ] || [ "$ST" = failed ]; then
+              echo "::error::sessione WhatsApp non ripristinata (stato $ST): rigenerare il secret OPENWA_BAILEYS_CREDS_B64"
+              exit 1
+            fi
+            sleep 5
+            if [ "$i" = 36 ]; then
+              echo "::error::timeout connessione WhatsApp"
+              exit 1
+            fi
+          done
+          # 4. invio messaggio al gruppo
+          MSG="Retro Rewind PierWFC (server personale) pronta: ${WBFS_NAME:-file .wbfs}"
+          if [ -n "${DRIVE_URL:-}" ]; then
+            MSG=$(printf '%s\nDownload: %s' "$MSG" "$DRIVE_URL")
+          fi
+          BODY=$(python3 -c "import json,sys; print(json.dumps({'chatId': sys.argv[1], 'text': sys.argv[2]}))" \
+            "$WA_GROUP_ID" "$MSG")
+          RESP=$(curl -sf -m 30 -X POST -H "x-api-key: $OPENWA_API_KEY" \
+            -H 'Content-Type: application/json' -d "$BODY" \
+            "$API/api/sessions/$SID/messages/send-text")
+          echo "inviato: $RESP"
