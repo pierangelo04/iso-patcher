@@ -47,6 +47,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb DISPLAY=:99
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
+          printf '[Options]\\nWriteToFile = True\\nVerbosity = 3\\nWriteToConsole = False\\n[Logs]\\nOSREPORT = True\\nBOOT = True\\nIOS = True\\nIOS_NET = True\\nIOS_FS = True\\nWII_IPC = True\\nCOMMON = True\\nDVDINTERFACE = True\\n' > $D/Config/Logger.ini
           dolphin-emu -b -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
           N=$(( SECS / 20 ))
@@ -55,7 +56,9 @@ jobs:
             import -window root /work/shots/shot-$(printf %03d $i).png || true
             kill -0 $DP 2>/dev/null || { echo "Dolphin terminato"; break; }
           done
+          xwininfo -root -tree | head -30; ps aux | grep -i dolphin | head -3
           kill $DP 2>/dev/null || true
+          cp -r $D/Logs /work/shots/ 2>/dev/null; find $D -maxdepth 2 | head -20
           tail -n 60 /work/dolphin.log
           INNER
           sed -i 's/^          //' run.sh
