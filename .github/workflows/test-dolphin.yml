@@ -50,14 +50,13 @@ jobs:
           openbox >/dev/null 2>&1 &
           sleep 2
           printf '[Options]\nWriteToFile = True\nVerbosity = 4\nWriteToConsole = True\n[Logs]\nOSREPORT = True\nBOOT = True\nIOS = True\nIOS_NET = True\nIOS_FS = True\nWII_IPC = True\nCOMMON = True\nDVDINTERFACE = True\n' > $D/Config/Logger.ini
-          printf '[Wiimote1]\nSource = 1\nDevice = XInput2/0/Virtual core keyboard\nButtons/A = Return\nButtons/B = BackSpace\nButtons/1 = 1\nButtons/2 = 2\nButtons/- = m\nButtons/+ = p\nButtons/Home = h\nD-Pad/Up = Up\nD-Pad/Down = Down\nD-Pad/Left = Left\nD-Pad/Right = Right\n' > $D/Config/WiimoteNew.ini
           dolphin-emu -b -v "Software Renderer" -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
           N=$(( SECS / 20 ))
           for i in $(seq 1 $N); do
             sleep 20
             if [ $i = 3 ]; then W=$(xdotool search --name RMCPTO | head -1); xdotool windowfocus $W; xdotool mousemove 640 400 click 1; xdotool key F10; echo SENT_F10; fi
-            if [ $i -gt 3 ]; then xdotool windowfocus $(xdotool search --name RMCPTO | head -1); for k in 1 2 3; do xdotool keydown Return; sleep 0.4; xdotool keyup Return; sleep 2; done; fi
+            if [ $i -gt 3 ]; then xdotool windowfocus $(xdotool search --name RMCPTO | head -1); for k in 1 2 3; do xdotool mousemove 640 400; xdotool mousedown 1; sleep 0.5; xdotool mouseup 1; sleep 2; done; fi
             xdotool search --name RMCPTO getwindowname | head -2
             xdotool search --name RMCPTO key --clearmodifiers F9 2>&1 | head -2; top -b -n1 | head -12 | tail -6
             import -window root /work/shots/shot-$(printf %03d $i).png || true
