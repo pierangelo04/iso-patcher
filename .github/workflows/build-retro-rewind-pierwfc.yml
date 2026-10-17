@@ -111,10 +111,11 @@ jobs:
       - name: Scarica il pack Retro Rewind (full, RetroWFC)
         run: |
           curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
-          unzip -q RetroRewind.zip 'RetroRewind6/*'
+          unzip -q RetroRewind.zip 'RetroRewind6/*' 'riivolution/RetroRewind6.xml'
           rm -f RetroRewind.zip
           du -sh RetroRewind6
           test -f RetroRewind6/UI/Title.szs
+          test -f riivolution/RetroRewind6.xml
           test -f RetroRewind6/Binaries/Code.pul
           test -f RetroRewind6/Binaries/Loader.pul
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
@@ -195,12 +196,9 @@ jobs:
           export SRC_TYPE=EUR
           export RR_SRC_TYPE=EUR
           bash ./copy-files.sh
+          cp -f workdir.tmp/sys/main.dol /tmp/main.dol.afterfix
           cmp -s /tmp/main.dol.vanilla workdir.tmp/sys/main.dol && { echo "::error::sys/main.dol invariato: loader Pulsar NON applicato"; exit 1; } || echo "OK: sys/main.dol sostituito col loader"
           test -f workdir.tmp/files/Scene/UI/Title.szs || (echo "::error::Scene/UI/Title.szs mancante dopo copy-files"; exit 1)
-          # opzioni extra di wit copy (es. --dolpatch) lette dallo script del builder
-          DOLPATCH=$(grep -o -- '--dolpatch[= ][^ ]*' create-rr-pal.sh | head -n1 || true)
-          echo "dolpatch dal builder: '$DOLPATCH'"
-          echo "DOLPATCH_OPT=$DOLPATCH" >> "$GITHUB_ENV"
           # 4. Verifica file chiave
           echo "--- Verifica ---"
           test -f workdir.tmp/files/Binaries/Code.pul || (echo "::error::Code.pul mancante"; exit 1)
@@ -212,7 +210,7 @@ jobs:
           mkdir -p new-image
           wit copy workdir.tmp -T0 --DEST "new-image/$OUT" -ovv --links \
             --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
-            --security-fix $DOLPATCH_OPT --name "Mario Kart Retro Rewind PierWFC" --wbfs
+            --security-fix --name "Mario Kart Retro Rewind PierWFC" --wbfs
           echo "OUTPUT_WBFS=$OUT" >> "$GITHUB_ENV"
           ls -lh new-image
           df -h .
