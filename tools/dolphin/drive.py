@@ -34,7 +34,7 @@ def find(words, w):
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
-t0 = time.time(); n = 0; last = ""; mainclicks = 0
+t0 = time.time(); n = 0; last = ""; mainclicks = 0; unk = 0
 while time.time() - t0 < SECS:
     n += 1
     p = shot(n)
@@ -62,5 +62,13 @@ while time.time() - t0 < SECS:
     elif has("Single Player") and not has("Main Menu"):
         yy = find(words, "Back")
         if yy: click(*yy); action = "click Back (percorso sbagliato)"
+    if action == "-":
+        unk += 1
+        if unk == 3:
+            click(505, 320); action = "fallback: slot licenza 1"
+        elif unk > 3 and unk % 3 == 0:
+            click(640, 430); action = "fallback: click OK/centro"
+    else:
+        unk = 0
     log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": action, "text": txt[:300]}) + "\n"); log.flush()
     time.sleep(4)
