@@ -1,0 +1,247 @@
+name: Build Retro Rewind ISO (PierWFC server)
+
+# Seconda versione della ISO Retro Rewind che si collega al server WFC
+# personale (PierWFC, sul VPS) invece che a RetroWFC ufficiale.
+# Workflow SEPARATO da build-retro-rewind.yml: non lo sostituisce, non fa
+# commit, non carica su Drive e non invia WhatsApp. Parte solo a mano
+# (Actions > Run workflow) e il file finisce come artifact della run.
+#
+# Cosa cambia rispetto alla build normale: dopo aver scaricato il pack
+# ufficiale, tools/pierwfc/patch_code_pul.py modifica Binaries/Code.pul
+# (dominio play.rwfc.net -> dominio PierWFC, chiave pubblica di firma
+# ufficiale -> chiave pubblica del server PierWFC). Il resto e' identico.
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: "Dominio del server PierWFC (max 15 caratteri)"
+        type: string
+        required: false
+        default: "q7x.duckdns.org"
+
+permissions:
+  contents: read
+
+env:
+  PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
+  BUILDER_MEGA_LINK: https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w
+  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip
+  MEGA_ISO_DIR: /iso-originale
+  MEGA_ISO_NAME: ""
+  WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
+  PIERWFC_DOMAIN: ${{ github.event.inputs.domain || 'q7x.duckdns.org' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Installa wit (Wiimms ISO Tools)
+        run: |
+          curl -fsSL -o /tmp/wit.tar.gz "$WIT_URL"
+          tar xzf /tmp/wit.tar.gz -C /tmp
+          WITDIR=$(ls -d /tmp/wit-v3.05a* | head -n1)
+          sudo install -m755 "$WITDIR/bin/wit" /usr/local/bin/wit
+          wit --version
+
+      - name: Installa MEGAcmd
+        shell: bash
+        run: |
+          if ! command -v mega-get >/dev/null 2>&1; then
+            source /etc/os-release
+            DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+            wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+            sudo apt install -y "/tmp/${DEB}"
+          fi
+          mega-get --version 2>&1 | head -n2 || true
+
+      - name: Prepara il patcher (ISO Builder v6.13.0+ da MEGA)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Link pubblico (anonimo, nessun login): contiene SEMPRE il builder
+          # aggiornato con Kamek Loader v2. Quello su GitHub e' obsoleto (v1).
+          # NOTA: mega-get esige una cartella di destinazione ESISTENTE.
+          rm -rf /tmp/megabuilder
+          mkdir -p /tmp/megabuilder
+          # Retry del download MEGA (a volte mega-get si interrompe a meta'):
+          # riprova fino a 3 volte, con ls diagnostico tra un tentativo e l'altro.
+          for i in 1 2 3; do
+            echo "Tentativo mega-get #$i..."
+            if mega-get "$BUILDER_MEGA_LINK" /tmp/megabuilder; then
+              echo "mega-get riuscito al tentativo #$i"
+              break
+            fi
+            echo "mega-get fallito al tentativo #$i, contenuto parziale:"
+            ls -R /tmp/megabuilder 2>/dev/null | head -n 20
+            if [ "$i" = "3" ]; then
+              echo "::error::mega-get fallito dopo 3 tentativi"
+              exit 1
+            fi
+            sleep 5
+          done
+          ls -R /tmp/megabuilder | head -n 50
+          # Trova lo zip del builder in modo dinamico (la struttura della
+          # cartella MEGA upstream puo' cambiare): cerca ricorsivamente.
+          BUILDER_ZIP_PATH=$(find /tmp/megabuilder -name "$BUILDER_ZIP" -print -quit 2>/dev/null)
+          if [ -z "$BUILDER_ZIP_PATH" ]; then
+            echo "::error::Builder zip '$BUILDER_ZIP' non trovato nella cartella MEGA scaricata. Struttura cambiata upstream?"
+            find /tmp/megabuilder -name "*.zip" 2>/dev/null | head -20
+            exit 1
+          fi
+          echo "Trovato builder: $BUILDER_ZIP_PATH"
+          unzip -q -o "$BUILDER_ZIP_PATH"
+          chmod a+x *.sh
+          # Builder v6.13.0+: struttura con Strap.szs (non piu' Loaders/main.dol)
+          test -f extra/Boot/Strap/Strap.szs || (echo "::error::extra/Boot/Strap/Strap.szs mancante"; exit 1)
+          test -f copy-files.sh || (echo "::error::copy-files.sh mancante"; exit 1)
+          echo "Builder v6.13.0+ OK: Strap.szs + copy-files.sh presenti"
+          rm -rf /tmp/megabuilder
+
+      - name: Scarica il pack Retro Rewind (full, RetroWFC)
+        run: |
+          curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
+          unzip -q RetroRewind.zip 'RetroRewind6/*'
+          rm -f RetroRewind.zip
+          du -sh RetroRewind6
+          test -f RetroRewind6/UI/Title.szs
+          test -f RetroRewind6/Binaries/Code.pul
+          test -f RetroRewind6/Binaries/Loader.pul
+          echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
+
+      - name: Punta il client al server PierWFC (dominio + chiave)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          pip install --quiet cryptography
+          cp RetroRewind6/Binaries/Code.pul /tmp/Code.pul.orig
+          python3 tools/pierwfc/patch_code_pul.py RetroRewind6/Binaries/Code.pul "$PIERWFC_DOMAIN" tools/pierwfc/pierwfc-public-key.pem
+          # controllo: niente piu' riferimenti al server ufficiale nel client
+          if grep -qa 'play.rwfc.net' RetroRewind6/Binaries/Code.pul; then
+            echo "::error::play.rwfc.net ancora presente in Code.pul"; exit 1
+          fi
+          grep -qa "$PIERWFC_DOMAIN" RetroRewind6/Binaries/Code.pul
+          cmp -s /tmp/Code.pul.orig RetroRewind6/Binaries/Code.pul && { echo "::error::Code.pul non modificato"; exit 1; } || true
+          sha256sum RetroRewind6/Binaries/Code.pul
+
+      - name: Scarica ISO base da MEGA (PAL, RMCP01)
+        shell: bash
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          if [ -z "${MEGA_USERNAME:-}" ] || [ -z "${MEGA_PASSWORD:-}" ]; then
+            echo "::error::Secrets MEGA_USERNAME/MEGA_PASSWORD mancanti. Impostali in Settings > Secrets."
+            exit 1
+          fi
+          # MEGAcmd gia' installato nello step dedicato; qui serve solo il login
+          # per la cartella privata /iso-originale (il builder sopra e' pubblico).
+          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD"
+          echo "--- Contenuto di $MEGA_ISO_DIR ---"
+          mega-ls -l "$MEGA_ISO_DIR"
+          # Nome file: da MEGA_ISO_NAME oppure primo .iso trovato nella cartella
+          if [ -n "${MEGA_ISO_NAME:-}" ]; then
+            REMOTE_FILE="$MEGA_ISO_DIR/$MEGA_ISO_NAME"
+          else
+            PICK=$(mega-ls "$MEGA_ISO_DIR" | grep -i '\.iso$' | head -n1 | tr -d '\r' | xargs || true)
+            if [ -n "$PICK" ]; then PICK=$(basename "$PICK"); fi
+            if [ -z "$PICK" ]; then
+              echo "::error::Nessun file .iso trovato in $MEGA_ISO_DIR su MEGA."
+              exit 1
+            fi
+            REMOTE_FILE="$MEGA_ISO_DIR/$PICK"
+          fi
+          echo "Scarico $REMOTE_FILE -> MarioKart.iso"
+          mega-get "$REMOTE_FILE" ./MarioKart.iso
+          mega-logout || true
+          ls -lh MarioKart.iso
+          # NOTA: `wit INFO` stampa keywords interne, NON le ISO. Per le ISO usare LIST/ID6.
+          wit LIST MarioKart.iso 2>&1 | head -n 30
+          wit ID6 MarioKart.iso 2>&1 | grep -q "RMCP01" || (echo "::error::La ISO base da MEGA non contiene RMCP01 (PAL). Controlla il file in $MEGA_ISO_DIR."; exit 1)
+
+      - name: Compila l'ISO patchata (manuale, builder v6.13.0)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h .
+          rm -rf workdir.tmp new-image
+          # 1. Estrai ISO base
+          wit extract MarioKart.iso --DEST workdir.tmp --psel data --links --include RMCP01 -vv1 -F-.svn/
+          test -d workdir.tmp
+          test -f workdir.tmp/setup.txt
+          rm -f MarioKart.iso
+          # 2. Copia i file Retro Rewind (pack) in workdir.tmp/files/
+          #    Il pack RetroRewind6/ contiene Binaries/, UI/, Race/, ecc.
+          test -d RetroRewind6 || (echo "::error::RetroRewind6/ mancante"; exit 1)
+          cp -r RetroRewind6/* workdir.tmp/files/
+          echo "Pack copiato in workdir.tmp/files/"
+          # 3. Copia i file extra del builder (Strap.szs, bi2.bin, ecc.)
+          #    extra/Boot/Strap/Strap.szs -> workdir.tmp/files/Boot/Strap/ ?
+          #    Proviamo le posizioni standard
+          if [ -d extra ]; then
+            echo "Contenuto extra/:"
+            find extra -type f | head -20
+            # Copia ricorsiva: extra/* -> workdir.tmp/files/
+            # (la struttura extra/ rispecchia quella di files/)
+            cp -r extra/* workdir.tmp/files/ 2>/dev/null || true
+            echo "Extra copiato"
+          fi
+          # 4. Verifica file chiave
+          echo "--- Verifica ---"
+          test -f workdir.tmp/files/Binaries/Code.pul || (echo "::error::Code.pul mancante"; exit 1)
+          test -f workdir.tmp/files/Binaries/Loader.pul || (echo "::error::Loader.pul mancante"; exit 1)
+          ls workdir.tmp/files/Binaries/
+          # 5. Ricostruisci WBFS
+          OUT="Mario Kart Wii(Retro Rewind PierWFC)-Aggiornamento $(date -u +%d-%m-%Y).wbfs"
+          echo "Nome output: $OUT"
+          mkdir -p new-image
+          wit copy workdir.tmp -T0 --DEST "new-image/$OUT" -ovv --links \
+            --id RMCPTO --ticket-id=RMCR --tmd-id=RMCR --boot-id=RMCP \
+            --security-fix --name "Mario Kart Retro Rewind PierWFC" --wbfs
+          echo "OUTPUT_WBFS=$OUT" >> "$GITHUB_ENV"
+          ls -lh new-image
+          df -h .
+
+      - name: Verifica file finale (RetroWFC, niente patch Wiimmfi)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WBFS="new-image/$OUTPUT_WBFS"
+          test -f "$WBFS"
+          # NOTA: `wit INFO` non legge le immagini. LIST/ID6/FILES si'.
+          echo "=== $WBFS (Dolphin + Wii) ==="
+          wit LIST -l "$WBFS" 2>&1 | tee /tmp/wit-info.txt
+          grep -q "RMCPTO" /tmp/wit-info.txt || (echo "::error::GameID RMCPTO non trovato"; exit 1)
+          grep -q "Mario Kart Retro Rewind PierWFC" /tmp/wit-info.txt || (echo "::error::Nome atteso non trovato"; exit 1)
+          wit ID6 "$WBFS" 2>&1 | grep -q "RMCPTO" || (echo "::error::ID RMCPTO non trovato nel WBFS"; exit 1)
+          echo "--- Filelist (controllo Retro Rewind) ---"
+          wit FILES "$WBFS" 2>&1 | tee /tmp/wit-files.txt | head -n 50
+          # La build deve contenere i file Pulsar/Retro (almeno Binaries + Course).
+          # `wit FILES` elenca i percorsi interni; accettiamo sia formati con
+          # prefisso "/" sia senza.
+          grep -q "Binaries/Code.pul\|files/Binaries/Code.pul\|/Binaries/" /tmp/wit-files.txt \
+            || (echo "::warning::Code.pul non visibile in wit FILES, controllo con FILELIST"; wit FILELIST "$WBFS" 2>&1 | grep -q "Code.pul" || (echo "::error::Code.pul assente nella build finale"; exit 1))
+          echo "OK: $OUTPUT_WBFS (Dolphin + Wii) con ID RMCPTO e file Retro Rewind."
+          echo "Server online: PierWFC ($PIERWFC_DOMAIN), nessuna patch Wiimmfi applicata."
+          {
+            echo "## Verifica build"
+            echo "- File unico: \`$OUTPUT_WBFS\` ($(du -h "$WBFS" | cut -f1)) per Dolphin E Wii (sulla USB in \`/wbfs/\`; se il forwarder cerca \`RMCPTO.wbfs\`, rinominalo cosi)"
+            echo "- GameID: \`RMCPTO\` (base PAL RMCP01)"
+            echo "- Builder: ufficiale v6.13.0+ (Strap.szs)"
+            echo "- Pulsar: \`Binaries/Code.pul\` + \`Loader.pul\` presenti"
+            echo "- Server: PierWFC ($PIERWFC_DOMAIN), nessuna patch Wiimmfi"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+      - name: Carica il WBFS come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: retro-rewind-pierwfc-wbfs
+          path: new-image/*.wbfs
+          retention-days: 7
+          compression-level: 0
