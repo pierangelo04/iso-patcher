@@ -10,6 +10,10 @@ on:
         description: "ID della run PierWFC che contiene l'artifact"
         type: string
         required: true
+      artifact:
+        description: "Nome artifact con il wbfs"
+        type: string
+        default: "retro-rewind-pierwfc-wbfs"
       seconds:
         description: "Secondi di emulazione"
         type: string
@@ -29,7 +33,7 @@ jobs:
       - name: Scarica ISO (artifact della run)
         uses: actions/download-artifact@v4
         with:
-          name: retro-rewind-pierwfc-wbfs
+          name: ${{ inputs.artifact }}
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: iso
