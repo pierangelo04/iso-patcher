@@ -32,51 +32,34 @@ jobs:
           github-token: ${{ github.token }}
           path: iso
 
-      - name: Installa Dolphin + strumenti
+      - name: Dolphin in container Ubuntu 26.04 (headless)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils mesa-vulkan-drivers libgl1-mesa-dri
-          dolphin-emu --version 2>&1 | head -2 || true
-          ls -la iso; df -h . | tail -1
-
-      - name: Configura Dolphin (renderer software, no audio, veloce)
-        run: |
+          mkdir -p shots; df -h . | tail -1; ls -la iso
+          cat > run.sh <<'INNER'
+          set -x
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils mesa-vulkan-drivers libgl1-mesa-dri >/dev/null
+          dolphin-emu --version 2>&1 | head -2
           D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
-          cat > $D/Config/Dolphin.ini <<'INI'
-          [Core]
-          GFXBackend = Software Renderer
-          CPUCore = 1
-          DSPHLE = True
-          EmulationSpeed = 0.0
-          SkipIPL = True
-          [DSP]
-          Backend = No Audio Output
-          [Interface]
-          ConfirmStop = False
-          UsePanicHandlers = False
-          INI
-          sed -i 's/^          //' $D/Config/Dolphin.ini
-          cat $D/Config/Dolphin.ini
-
-      - name: Avvia Dolphin e fai screenshot
-        run: |
-          mkdir -p shots
-          F=$(ls iso/*.wbfs | head -1)
-          export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb
+          printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
+          F=$(ls /work/iso/*.wbfs | head -1)
+          export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb DISPLAY=:99
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 3
-          export DISPLAY=:99
-          dolphin-emu -b -e "$F" > dolphin.log 2>&1 &
+          dolphin-emu -b -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
-          N=$(( ${{ inputs.seconds }} / 20 ))
+          N=$(( SECS / 20 ))
           for i in $(seq 1 $N); do
             sleep 20
-            import -window root shots/shot-$(printf %03d $i).png || true
+            import -window root /work/shots/shot-$(printf %03d $i).png || true
             kill -0 $DP 2>/dev/null || { echo "Dolphin terminato"; break; }
           done
           kill $DP 2>/dev/null || true
-          tail -n 80 dolphin.log
-          find $HOME/.local/share/dolphin-emu -name '*.txt' -o -name '*.log' | head
+          tail -n 60 /work/dolphin.log
+          INNER
+          sed -i 's/^          //' run.sh
+          docker run --rm -e SECS=${{ inputs.seconds }} -v "$PWD":/work ubuntu:26.04 bash /work/run.sh
 
       - name: Carica risultati
         if: always()
