@@ -111,10 +111,11 @@ jobs:
       - name: Scarica il pack Retro Rewind (full, RetroWFC)
         run: |
           curl -fL --retry 5 --retry-all-errors -C - -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
-          unzip -q RetroRewind.zip 'RetroRewind6/*'
+          unzip -q RetroRewind.zip 'RetroRewind6/*' 'riivolution/RetroRewind6.xml'
           rm -f RetroRewind.zip
           du -sh RetroRewind6
           test -f RetroRewind6/UI/Title.szs
+          test -f riivolution/RetroRewind6.xml
           test -f RetroRewind6/Binaries/Code.pul
           test -f RetroRewind6/Binaries/Loader.pul
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
@@ -181,22 +182,23 @@ jobs:
           test -d workdir.tmp
           test -f workdir.tmp/setup.txt
           rm -f MarioKart.iso
-          # 2. Copia i file Retro Rewind (pack) in workdir.tmp/files/
-          #    Il pack RetroRewind6/ contiene Binaries/, UI/, Race/, ecc.
+          # 2. Applica il builder ufficiale: copy-files.sh mette i file del pack
+          #    RetroRewind6/ nei percorsi giusti (Scene/UI, Race, Boot/Strap,
+          #    Binaries, ...) e sostituisce sys/main.dol col loader Pulsar.
+          #    (Prima si faceva "cp -r RetroRewind6/* files/": percorsi sbagliati,
+          #    main.dol vanilla -> il gioco partiva come Mario Kart normale.)
           test -d RetroRewind6 || (echo "::error::RetroRewind6/ mancante"; exit 1)
-          cp -r RetroRewind6/* workdir.tmp/files/
-          echo "Pack copiato in workdir.tmp/files/"
-          # 3. Copia i file extra del builder (Strap.szs, bi2.bin, ecc.)
-          #    extra/Boot/Strap/Strap.szs -> workdir.tmp/files/Boot/Strap/ ?
-          #    Proviamo le posizioni standard
-          if [ -d extra ]; then
-            echo "Contenuto extra/:"
-            find extra -type f | head -20
-            # Copia ricorsiva: extra/* -> workdir.tmp/files/
-            # (la struttura extra/ rispecchia quella di files/)
-            cp -r extra/* workdir.tmp/files/ 2>/dev/null || true
-            echo "Extra copiato"
-          fi
+          echo "--- create-rr-pal.sh del builder ---"
+          cat create-rr-pal.sh || true
+          echo "--- inizio copy-files.sh ---"
+          head -n 30 copy-files.sh
+          cp -f workdir.tmp/sys/main.dol /tmp/main.dol.vanilla
+          export SRC_TYPE=EUR
+          export RR_SRC_TYPE=EUR
+          bash ./copy-files.sh || echo "copy-files.sh exit $? (wit dolpatch avvisi, normale come nel builder ufficiale)"
+          cp -f workdir.tmp/sys/main.dol /tmp/main.dol.afterfix
+          cmp -s /tmp/main.dol.vanilla workdir.tmp/sys/main.dol && { echo "::error::sys/main.dol invariato: loader Pulsar NON applicato"; exit 1; } || echo "OK: sys/main.dol sostituito col loader"
+          test -f workdir.tmp/files/Scene/UI/Title.szs || (echo "::error::Scene/UI/Title.szs mancante dopo copy-files"; exit 1)
           # 4. Verifica file chiave
           echo "--- Verifica ---"
           test -f workdir.tmp/files/Binaries/Code.pul || (echo "::error::Code.pul mancante"; exit 1)
