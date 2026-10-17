@@ -39,10 +39,10 @@ jobs:
           set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
-          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
+          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox gdb mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
           dolphin-emu --version 2>&1 | head -2
           D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
-          printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\nFastmem = False\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
+          printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
           F=$(ls /work/iso/*.wbfs | head -1)
           export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb DISPLAY=:99
           Xvfb :99 -screen 0 1280x800x24 &
