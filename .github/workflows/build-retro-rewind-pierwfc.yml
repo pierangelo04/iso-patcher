@@ -21,6 +21,11 @@ on:
         type: string
         required: false
         default: "q7x.duckdns.org"
+      patch_server:
+        description: "false = ISO Retro Rewind NON patchata (server ufficiale), solo per confronto test"
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -121,6 +126,7 @@ jobs:
           echo "Pack OK: Code.pul + Loader.pul presenti (Pulsar/RetroWFC)"
 
       - name: Punta il client al server PierWFC (dominio + chiave)
+        if: ${{ github.event.inputs.patch_server != 'false' }}
         shell: bash
         run: |
           set -euxo pipefail
