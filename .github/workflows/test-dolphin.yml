@@ -39,7 +39,7 @@ jobs:
           set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
-          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox gdb mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
+          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
           dolphin-emu --version 2>&1 | head -2
           D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
           printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
@@ -52,16 +52,7 @@ jobs:
           printf '[Options]\nWriteToFile = True\nVerbosity = 4\nWriteToConsole = True\n[Logs]\nOSREPORT = True\nBOOT = True\nIOS = True\nIOS_NET = True\nIOS_FS = True\nWII_IPC = True\nCOMMON = True\nDVDINTERFACE = True\n' > $D/Config/Logger.ini
           dolphin-emu -b -v "Software Renderer" -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
-          N=$(( SECS / 20 ))
-          for i in $(seq 1 $N); do
-            sleep 20
-            if [ $i = 3 ]; then W=$(xdotool search --name RMCPTO | head -1); xdotool windowfocus $W; xdotool mousemove 640 400 click 1; xdotool key F10; echo SENT_F10; fi
-            if [ $i -eq 12 ]; then xdotool windowfocus $(xdotool search --name RMCPTO | head -1); xdotool mousemove 510 514; sleep 1; xdotool mousedown 1; sleep 0.5; xdotool mouseup 1; elif [ $i -ge 17 ]; then xdotool windowfocus $(xdotool search --name RMCPTO | head -1); for k in 1 2; do xdotool mousemove 640 440; xdotool mousedown 1; sleep 0.5; xdotool mouseup 1; sleep 6; done; elif [ $i -gt 3 ]; then xdotool windowfocus $(xdotool search --name RMCPTO | head -1); for k in 1 2 3; do xdotool mousemove 640 400; xdotool mousedown 1; sleep 0.5; xdotool mouseup 1; sleep 2; done; fi
-            xdotool search --name RMCPTO getwindowname | head -2
-            xdotool search --name RMCPTO key --clearmodifiers F9 2>&1 | head -2; top -b -n1 | head -12 | tail -6
-            import -window root /work/shots/shot-$(printf %03d $i).png || true
-            kill -0 $DP 2>/dev/null || { echo "Dolphin terminato"; break; }
-          done
+          python3 /work/tools/dolphin/drive.py $SECS 2>&1 | tail -5
           for w in $(xdotool search --name Dolphin); do xwininfo -id $w | grep -i 'Map State\|Absolute\|Width\|Height\|xwininfo'; done; xwininfo -root -tree | head -30; ps aux | grep -i dolphin | head -3
           kill $DP 2>/dev/null || true
           cp -r $D/Logs /work/shots/ 2>/dev/null; cp -r $D/ScreenShots /work/shots/ss 2>/dev/null; ls -R $D/ScreenShots | head; find $D -maxdepth 2 | head -20

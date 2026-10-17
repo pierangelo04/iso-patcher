@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Pilota Dolphin in un display virtuale: legge lo schermo con OCR e clicca."""
+import subprocess, time, sys, os, re, json
+SECS = int(sys.argv[1]) if len(sys.argv) > 1 else 600
+OUT = "/work/shots"
+X0, Y0, W, H = 320, 164, 640, 484
+def sh(cmd, **kw):
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True, **kw).stdout
+def wid():
+    return sh("xdotool search --name RMCPTO | head -1").strip()
+def click(x, y):
+    w = wid()
+    if w: sh(f"xdotool windowfocus {w}")
+    sh(f"xdotool mousemove {x} {y}"); time.sleep(0.4)
+    sh("xdotool mousedown 1"); time.sleep(0.5); sh("xdotool mouseup 1")
+def shot(n):
+    p = f"{OUT}/s-{n:03d}.png"
+    sh(f"import -window root {p}")
+    return p
+def ocr(p):
+    sh(f"convert {p} -crop {W}x{H}+{X0}+{Y0} +repage -resize 200% /tmp/c.png")
+    tsv = sh("tesseract /tmp/c.png /tmp/o --psm 11 tsv 2>/dev/null; cat /tmp/o.tsv")
+    words = []
+    for line in tsv.splitlines()[1:]:
+        f = line.split("\t")
+        if len(f) < 12 or not f[11].strip(): continue
+        try: words.append((f[11].strip(), X0 + int(f[6]) / 2 + int(f[8]) / 4, Y0 + int(f[7]) / 2 + int(f[9]) / 4, float(f[10])))
+        except ValueError: pass
+    return words
+def find(words, w):
+    for t, x, y, c in words:
+        if t.lower().strip(".,!?") == w.lower(): return int(x), int(y)
+    return None
+log = open(f"{OUT}/drive.log", "w")
+time.sleep(40)
+w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
+t0 = time.time(); n = 0; last = ""
+while time.time() - t0 < SECS:
+    n += 1
+    p = shot(n)
+    words = ocr(p)
+    txt = " ".join(t for t, *_ in words)
+    action = "-"
+    def has(s): return s.lower() in txt.lower()
+    if has("Main Menu") and find(words, "WFC"):
+        x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
+    elif has("sure") and has("OK"):
+        yy = find(words, "Yes")
+        x, y = yy if yy else (640, 440)
+        click(x, y); action = f"click Yes {x},{y}"
+    elif find(words, "Next"):
+        x, y = find(words, "Next"); click(x, y); action = f"click Next {x},{y}"
+    elif find(words, "OK") and not has("Time Trial"):
+        x, y = find(words, "OK"); click(x, y); action = f"click OK {x},{y}"
+    elif has("Press") and has("Button"):
+        click(640, 400); action = "click title"
+    elif has("Licence") or has("licence"):
+        click(640, 400); action = "click licence"
+    elif has("Single Player") and not has("Main Menu"):
+        yy = find(words, "Back")
+        if yy: click(*yy); action = "click Back (percorso sbagliato)"
+    log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": action, "text": txt[:300]}) + "\n"); log.flush()
+    time.sleep(4)
