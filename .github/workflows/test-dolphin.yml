@@ -41,7 +41,7 @@ jobs:
           set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
-          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
+          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri tcpdump dnsutils libc-bin >/dev/null; for h in q7x.duckdns.org nas.q7x.duckdns.org gpcm.q7x.duckdns.org; do echo DNS $h; getent hosts $h; done 2>&1 | tee /work/shots/dns.txt; (timeout 900 tcpdump -l -nn -i any "port 53 or host 95.135.208.187" > /work/shots/net.txt 2>&1 &) ; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
           dolphin-emu --version 2>&1 | head -2
           D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
           printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
