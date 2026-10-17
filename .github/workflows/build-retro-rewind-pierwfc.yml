@@ -26,7 +26,8 @@ permissions:
 env:
   PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
   BUILDER_MEGA_LINK: https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w
-  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip
+  # il nome cambia ogni tanto (es. "... and above fixed3.zip"): cerca per pattern
+  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above*.zip
   MEGA_ISO_DIR: /iso-originale
   MEGA_ISO_NAME: ""
   WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
