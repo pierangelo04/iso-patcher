@@ -56,6 +56,7 @@ jobs:
           for i in $(seq 1 $N); do
             sleep 20
             if [ $i = 3 ]; then W=$(xdotool search --name RMCPTO | head -1); xdotool windowfocus $W; xdotool mousemove 640 400 click 1; xdotool key F10; echo SENT_F10; fi
+            if [ $i -gt 3 ]; then xdotool mousemove 640 400 click 1; xdotool key z; xdotool key x; xdotool key Return; fi
             xdotool search --name RMCPTO getwindowname | head -2
             xdotool search --name RMCPTO key --clearmodifiers F9 2>&1 | head -2; top -b -n1 | head -12 | tail -6
             import -window root /work/shots/shot-$(printf %03d $i).png || true
