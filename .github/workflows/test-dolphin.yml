@@ -39,7 +39,7 @@ jobs:
           set -x
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
-          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
+          apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps mesa-vulkan-drivers libgl1-mesa-dri >/dev/null; dpkg -L dolphin-emu | grep -i bin/ ; export PATH=$PATH:/usr/games
           dolphin-emu --version 2>&1 | head -2
           D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
           printf '[Core]\nGFXBackend = Software Renderer\nCPUCore = 1\nDSPHLE = True\nEmulationSpeed = 0.0\nSkipIPL = True\nFastmem = False\n[DSP]\nBackend = No Audio Output\n[Interface]\nConfirmStop = False\n' > $D/Config/Dolphin.ini
@@ -53,12 +53,13 @@ jobs:
           N=$(( SECS / 20 ))
           for i in $(seq 1 $N); do
             sleep 20
+            xdotool search --name RMCPTO key --clearmodifiers F9 2>&1 | head -2; top -b -n1 | head -12 | tail -6
             import -window root /work/shots/shot-$(printf %03d $i).png || true
             kill -0 $DP 2>/dev/null || { echo "Dolphin terminato"; break; }
           done
           xwininfo -root -tree | head -30; ps aux | grep -i dolphin | head -3
           kill $DP 2>/dev/null || true
-          cp -r $D/Logs /work/shots/ 2>/dev/null; find $D -maxdepth 2 | head -20
+          cp -r $D/Logs /work/shots/ 2>/dev/null; cp -r $D/ScreenShots /work/shots/ss 2>/dev/null; ls -R $D/ScreenShots | head; find $D -maxdepth 2 | head -20
           tail -n 60 /work/dolphin.log
           INNER
           sed -i 's/^          //' run.sh
