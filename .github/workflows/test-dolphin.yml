@@ -50,6 +50,7 @@ jobs:
           openbox >/dev/null 2>&1 &
           sleep 2
           printf '[Options]\nWriteToFile = True\nVerbosity = 4\nWriteToConsole = True\n[Logs]\nOSREPORT = True\nBOOT = True\nIOS = True\nIOS_NET = True\nIOS_FS = True\nWII_IPC = True\nCOMMON = True\nDVDINTERFACE = True\n' > $D/Config/Logger.ini
+          printf '[Wiimote1]\nSource = 1\nDevice = XInput2/0/Virtual core keyboard\nButtons/A = Return\nButtons/B = BackSpace\nButtons/1 = 1\nButtons/2 = 2\nButtons/- = m\nButtons/+ = p\nButtons/Home = h\nD-Pad/Up = Up\nD-Pad/Down = Down\nD-Pad/Left = Left\nD-Pad/Right = Right\n' > $D/Config/WiimoteNew.ini
           dolphin-emu -b -v "Software Renderer" -e "$F" > /work/dolphin.log 2>&1 &
           DP=$!
           N=$(( SECS / 20 ))
