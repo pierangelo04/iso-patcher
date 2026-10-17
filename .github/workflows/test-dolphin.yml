@@ -1,0 +1,88 @@
+name: Test ISO su Dolphin (headless)
+
+# Scarica il .wbfs prodotto da una run PierWFC, lo avvia in Dolphin con un
+# display virtuale e salva screenshot + log come artifact. Parte solo a mano.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID della run PierWFC che contiene l'artifact"
+        type: string
+        required: true
+      seconds:
+        description: "Secondi di emulazione"
+        type: string
+        default: "420"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Scarica ISO (artifact della run)
+        uses: actions/download-artifact@v4
+        with:
+          name: retro-rewind-pierwfc-wbfs
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: iso
+
+      - name: Installa Dolphin + strumenti
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils mesa-vulkan-drivers libgl1-mesa-dri
+          dolphin-emu --version 2>&1 | head -2 || true
+          ls -la iso; df -h . | tail -1
+
+      - name: Configura Dolphin (renderer software, no audio, veloce)
+        run: |
+          D=$HOME/.local/share/dolphin-emu; mkdir -p $D/Config
+          cat > $D/Config/Dolphin.ini <<'INI'
+          [Core]
+          GFXBackend = Software Renderer
+          CPUCore = 1
+          DSPHLE = True
+          EmulationSpeed = 0.0
+          SkipIPL = True
+          [DSP]
+          Backend = No Audio Output
+          [Interface]
+          ConfirmStop = False
+          UsePanicHandlers = False
+          INI
+          sed -i 's/^          //' $D/Config/Dolphin.ini
+          cat $D/Config/Dolphin.ini
+
+      - name: Avvia Dolphin e fai screenshot
+        run: |
+          mkdir -p shots
+          F=$(ls iso/*.wbfs | head -1)
+          export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb
+          Xvfb :99 -screen 0 1280x800x24 &
+          sleep 3
+          export DISPLAY=:99
+          dolphin-emu -b -e "$F" > dolphin.log 2>&1 &
+          DP=$!
+          N=$(( ${{ inputs.seconds }} / 20 ))
+          for i in $(seq 1 $N); do
+            sleep 20
+            import -window root shots/shot-$(printf %03d $i).png || true
+            kill -0 $DP 2>/dev/null || { echo "Dolphin terminato"; break; }
+          done
+          kill $DP 2>/dev/null || true
+          tail -n 80 dolphin.log
+          find $HOME/.local/share/dolphin-emu -name '*.txt' -o -name '*.log' | head
+
+      - name: Carica risultati
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolphin-test
+          path: |
+            shots
+            dolphin.log
