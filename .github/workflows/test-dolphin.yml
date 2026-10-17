@@ -57,7 +57,7 @@ jobs:
           python3 /work/tools/dolphin/drive.py $SECS 2>&1 | tail -5
           for w in $(xdotool search --name Dolphin); do xwininfo -id $w | grep -i 'Map State\|Absolute\|Width\|Height\|xwininfo'; done; xwininfo -root -tree | head -30; ps aux | grep -i dolphin | head -3
           kill $DP 2>/dev/null || true
-          cp -r $D/Logs /work/shots/ 2>/dev/null; cp -r $D/ScreenShots /work/shots/ss 2>/dev/null; ls -R $D/ScreenShots | head; find $D -maxdepth 2 | head -20
+          mkdir -p /work/shots/nand; cp -r $D/Wii/shared2/sys/net /work/shots/nand/ 2>/dev/null; find $D/Wii -type f | head -80 > /work/shots/nand/files.txt; for f in $(find $D/Wii/shared2/sys/net -type f); do xxd $f | head -60; done > /work/shots/nand/net.hex 2>&1; cp -r $D/Logs /work/shots/ 2>/dev/null; cp -r $D/ScreenShots /work/shots/ss 2>/dev/null; ls -R $D/ScreenShots | head; find $D -maxdepth 2 | head -20
           tail -n 60 /work/dolphin.log
           INNER
           sed -i 's/^          //' run.sh

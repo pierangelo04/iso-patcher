@@ -44,10 +44,9 @@ while time.time() - t0 < SECS:
     def has(s): return s.lower() in txt.lower()
     if has("Multiplayer") and wfcclicks < 5:
         wfcclicks += 1; online = True
-        click(600, 525); time.sleep(1.5)
-        yy = find(words, "WFC")
-        x, y = 600, 510
-        click(x, y + 15); action = f"click Retro WFC {x},{y+15}"
+        POS = [(600,525),(680,525),(640,440),(640,500),(560,525)]
+        x, y = POS[(wfcclicks-1) % len(POS)]
+        click(x, y); time.sleep(1.5); click(x, y); action = f"click Retro WFC {x},{y}"
     elif has("Main Menu") and find(words, "WFC"):
         x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
     elif has("sure") and has("OK"):
@@ -58,6 +57,8 @@ while time.time() - t0 < SECS:
         x, y = find(words, "Next"); click(x, y); action = f"click Next {x},{y}"
     elif find(words, "OK") and not has("Time Trial"):
         x, y = find(words, "OK"); click(x, y); action = f"click OK {x},{y}"
+    elif online and has("Grand Prix") and has("Back"):
+        click(386, 518); action = "back dal Single Player (WFC non entrato)"
     elif online and not (has("sure") or has("Yes") or has("agree") or has("Agree")):
         action = "wait online"
     elif has("Settings") and has("Back") and mainclicks < 6:
