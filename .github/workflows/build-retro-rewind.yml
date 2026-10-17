@@ -447,7 +447,7 @@ jobs:
           echo "Link Drive: $URL"
           echo "download_url=$URL" >> "$GITHUB_OUTPUT"
           # 4. pulizia: tengo solo i 2 file piu' recenti (quota Drive limitata)
-          IDS=$(curl -fsSL "https://www.googleapis.com/drive/v3/files?pageSize=10&orderBy=createdTime%20desc&fields=files(id)" \
+          IDS=$(curl -fsSL "https://www.googleapis.com/drive/v3/files?pageSize=10&orderBy=createdTime%20desc&fields=files(id)&q=not%20name%20contains%20%27PierWFC%27%20and%20trashed%3Dfalse" \
             -H "Authorization: Bearer $AT" \
             | python3 -c "
           import sys, json
