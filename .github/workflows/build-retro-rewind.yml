@@ -401,6 +401,14 @@ jobs:
             echo "- Server: RetroWFC ufficiale, nessuna patch Wiimmfi"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Carica il WBFS come artifact (Retro Rewind originale, server ufficiale)
+        uses: actions/upload-artifact@v4
+        with:
+          name: retro-rewind-original-wbfs
+          path: new-image/*.wbfs
+          retention-days: 7
+          compression-level: 0
+
       - name: Upload WBFS su Google Drive (link per WhatsApp)
         id: drive
         shell: bash
