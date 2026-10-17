@@ -244,8 +244,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
 
+      - name: Carica il WBFS come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: retro-rewind-pierwfc-wbfs
+          path: new-image/*.wbfs
+          retention-days: 7
+          compression-level: 0
+
       - name: Upload WBFS su Google Drive (link per WhatsApp)
         id: drive
+        # se Drive fallisce (es. token scaduto) il file resta comunque come artifact
+        continue-on-error: true
         shell: bash
         env:
           DRIVE_CLIENT_ID: ${{ secrets.DRIVE_CLIENT_ID }}
@@ -303,14 +313,6 @@ jobs:
         id: wbfsname
         shell: bash
         run: echo "wbfs_name=$OUTPUT_WBFS" >> "$GITHUB_OUTPUT"
-
-      - name: Carica il WBFS come artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: retro-rewind-pierwfc-wbfs
-          path: new-image/*.wbfs
-          retention-days: 7
-          compression-level: 0
 
   notify-whatsapp:
     # Invio WhatsApp del .wbfs appena buildato via OpenWA, che gira
