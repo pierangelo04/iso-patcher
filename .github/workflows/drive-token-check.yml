@@ -27,7 +27,7 @@ jobs:
           curl -s -X POST "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable" -H "Authorization: Bearer $AT" -H "Content-Type: application/json" -d "{\"name\":\"x\"}" -D - | tr -d "\r" | grep -iv "^x-\|^set-cookie" | head -20
           echo "AT length ${#AT}"
           LOC=$(curl -s -D - -o /dev/null -X POST "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable" -H "Authorization: Bearer $AT" -H "Content-Type: application/json" -H "X-Upload-Content-Type: application/octet-stream" -d "{\"name\":\"$NAME\"}" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
-          curl -s -X PUT "$LOC" -T "$F" | tee /tmp/up.json | jq -c '{id,name,size}'
+          curl -sS -X PUT "$LOC" -T "$F" -w "\nHTTP %{http_code}\n" -o /tmp/up.out; tail -c 600 /tmp/up.out; cp /tmp/up.out /tmp/up.json
           ID=$(jq -r .id /tmp/up.json)
           curl -s -X POST "https://www.googleapis.com/drive/v3/files/$ID/permissions" -H "Authorization: Bearer $AT" -H "Content-Type: application/json" -d '{"role":"reader","type":"anyone"}' | jq -c .
           curl -s -H "Authorization: Bearer $AT" "https://www.googleapis.com/drive/v3/files/$ID?fields=name,size,webViewLink" | jq -c .
