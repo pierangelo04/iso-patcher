@@ -54,7 +54,7 @@ while time.time() - t0 < SECS:
         x, y = find(words, "OK"); click(x, y); action = f"click OK {x},{y}"
     elif has("Settings") and has("Back") and mainclicks < 6:
         mainclicks += 1
-        click(515, 500); action = "click tile Nintendo WFC (menu RR)"
+        click(505, 320); action = "click slot licenza 1 (RR)"
     elif has("Press") and has("Button"):
         click(640, 400); action = "click title"
     elif has("Licence") or has("licence"):
