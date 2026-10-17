@@ -34,7 +34,7 @@ def find(words, w):
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
-t0 = time.time(); n = 0; last = ""
+t0 = time.time(); n = 0; last = ""; mainclicks = 0
 while time.time() - t0 < SECS:
     n += 1
     p = shot(n)
@@ -52,6 +52,9 @@ while time.time() - t0 < SECS:
         x, y = find(words, "Next"); click(x, y); action = f"click Next {x},{y}"
     elif find(words, "OK") and not has("Time Trial"):
         x, y = find(words, "OK"); click(x, y); action = f"click OK {x},{y}"
+    elif has("Settings") and has("Back") and mainclicks < 6:
+        mainclicks += 1
+        click(515, 500); action = "click tile Nintendo WFC (menu RR)"
     elif has("Press") and has("Button"):
         click(640, 400); action = "click title"
     elif has("Licence") or has("licence"):
