@@ -281,8 +281,10 @@ jobs:
             -H "Content-Type: application/octet-stream" \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
           echo "File caricato su Drive, ID: $FID"
-          # 2b. imposta il nome file (uploadType=media non accetta metadati)
-          META=$(python3 -c "import json; print(json.dumps({'name': '$OUTPUT_WBFS'}))")
+          # 2b. imposta nome e tag della build (uploadType=media non accetta metadati).
+          # Il tag appProperties marca i file creati da QUESTO workflow: la pulizia
+          # sotto cancella solo file con questo tag o con il nome esatto delle build.
+          META=$(python3 -c "import json; print(json.dumps({'name': '$OUTPUT_WBFS', 'appProperties': {'iso-patcher-build': 'retro-rewind-pierwfc'}}))")
           curl -fsSL -X PATCH "https://www.googleapis.com/drive/v3/files/$FID" \
             -H "Authorization: Bearer $AT" -H "Content-Type: application/json" \
             -d "$META" > /dev/null
@@ -295,19 +297,33 @@ jobs:
             | python3 -c "import sys,json; print(json.load(sys.stdin)['webViewLink'])")
           echo "Link Drive: $URL"
           echo "download_url=$URL" >> "$GITHUB_OUTPUT"
-          # 4. pulizia: tengo solo i 2 file piu' recenti (quota Drive limitata; solo file PierWFC, quelli della build normale non si toccano)
-          IDS=$(curl -fsSL "https://www.googleapis.com/drive/v3/files?pageSize=10&orderBy=createdTime%20desc&fields=files(id)&q=name%20contains%20%27PierWFC%27%20and%20trashed%3Dfalse" \
+          # 4. pulizia: tengo solo le 2 build piu' recenti (quota Drive limitata; solo le build PierWFC, gli altri file non si toccano)
+          # SICUREZZA: si cancellano SOLO file riconducibili a questo workflow
+          # (tag appProperties dello step 2b oppure nome esatto delle build).
+          # Mai cancellare per esclusione (es. "not name contains X"): qualunque
+          # altro file del Drive deve restare intoccato.
+          IDS=$(curl -fsSL -G "https://www.googleapis.com/drive/v3/files" \
             -H "Authorization: Bearer $AT" \
+            --data-urlencode "pageSize=100" \
+            --data-urlencode "orderBy=createdTime desc" \
+            --data-urlencode "fields=files(id,name,appProperties)" \
+            --data-urlencode "q=(appProperties has { key='iso-patcher-build' and value='retro-rewind-pierwfc' } or name contains 'Aggiornamento') and trashed=false" \
             | python3 -c "
           import sys, json
-          ids = [f['id'] for f in json.load(sys.stdin).get('files', [])]
-          print(' '.join(ids[2:]))
+          PREFIX = 'Mario Kart Wii(Retro Rewind PierWFC)-Aggiornamento'
+          files = json.load(sys.stdin).get('files', [])
+          builds = [f for f in files
+                    if (f.get('appProperties') or {}).get('iso-patcher-build') == 'retro-rewind-pierwfc'
+                    or (f.get('name', '').startswith(PREFIX) and f.get('name', '').endswith('.wbfs'))]
+          for f in builds[2:]:
+              print(f['id'] + '\t' + f['name'])
           ")
-          for OLD in $IDS; do
+          echo "$IDS" | while IFS=$'\t' read -r OLD NAME; do
+            [ -z "$OLD" ] && continue
             [ "$OLD" = "$FID" ] && continue
             if curl -fsSL -X DELETE "https://www.googleapis.com/drive/v3/files/$OLD" \
               -H "Authorization: Bearer $AT" > /dev/null; then
-              echo "Rimosso vecchio file da Drive: $OLD"
+              echo "Rimossa vecchia build da Drive: $NAME ($OLD)"
             fi
           done
 
@@ -315,3 +331,4 @@ jobs:
         id: wbfsname
         shell: bash
         run: echo "wbfs_name=$OUTPUT_WBFS" >> "$GITHUB_OUTPUT"
+
