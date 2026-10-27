@@ -12,10 +12,24 @@ apt-get update -qq
 apt-get install -y -qq flatpak xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri tcpdump dnsutils libc-bin ca-certificates >/dev/null
 flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install --system -y --noninteractive flathub org.DolphinEmu.dolphin-emu > "$OUT/flatpak-install.log" 2>&1 || { echo "FLATPAK_INSTALL_FALLITO" > "$OUT/ABORT-dolphin.txt"; tail -5 "$OUT/flatpak-install.log"; exit 1; }
+# flatpak run (bwrap) non funziona dentro Docker senza privilegi ulteriori: uso i file del Flatpak ufficiale (runtime KDE + app) in un chroot, senza nuovi privilegi
+RT=$(ls -d /var/lib/flatpak/runtime/org.kde.Platform/x86_64/*/active/files | head -1)
+APPD=/var/lib/flatpak/app/org.DolphinEmu.dolphin-emu/x86_64/stable/active/files
+[ -d "$RT" ] && [ -x "$APPD/bin/dolphin-emu" ] || { echo "FLATPAK_FILES_ASSENTI RT=$RT" > "$OUT/ABORT-dolphin.txt"; ls "$APPD/bin" 2>&1 | head; exit 1; }
+CH=/opt/ch; mkdir -p $CH/usr $CH/app $CH/dev $CH/proc $CH/sys $CH/tmp $CH/work $CH/run $CH/var
+cp -a "$RT/etc" $CH/etc 2>/dev/null || mkdir -p $CH/etc
+cp /etc/resolv.conf /etc/hosts $CH/etc/ 2>/dev/null
+echo 'root:x:0:0:root:/work/home:/bin/bash' > $CH/etc/passwd; echo 'root:x:0:' > $CH/etc/group
+mount --bind "$RT" $CH/usr && mount --bind "$APPD" $CH/app && mount --rbind /dev $CH/dev && mount -t proc proc $CH/proc && mount --bind /tmp $CH/tmp && mount --bind /work $CH/work
+for l in lib lib64 bin sbin; do ln -sfn usr/$l $CH/$l; done
+printf '/app/lib\n/usr/lib/x86_64-linux-gnu/GL/default/lib\n/usr/lib/x86_64-linux-gnu\n' > $CH/etc/ld.so.conf
+for L in /usr/sbin/ldconfig /usr/bin/ldconfig /sbin/ldconfig; do [ -x $CH$L ] && { chroot $CH $L 2>&1 | tail -2; break; }; done
+ls $CH/usr/lib/x86_64-linux-gnu/GL 2>&1 | head -5 > "$OUT/gl-dirs.txt"
 mkdir -p /usr/games
 cat > /usr/games/dolphin-emu <<'WRAP'
 #!/bin/bash
-exec flatpak run --filesystem=/work --filesystem=/tmp --share=network --socket=x11 --env=LIBGL_ALWAYS_SOFTWARE=1 --env=QT_QPA_PLATFORM=xcb org.DolphinEmu.dolphin-emu "$@"
+mkdir -p /work/home
+exec chroot /opt/ch /usr/bin/env HOME=/work/home DISPLAY=${DISPLAY:-:99} XDG_RUNTIME_DIR=/tmp PATH=/app/bin:/usr/bin QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 /app/bin/dolphin-emu "$@"
 WRAP
 chmod +x /usr/games/dolphin-emu
 flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' | tee "$OUT/version.txt"
