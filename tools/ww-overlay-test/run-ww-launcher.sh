@@ -21,17 +21,19 @@ cp -a "$RT/etc" $CH/etc 2>/dev/null || mkdir -p $CH/etc
 cp /etc/resolv.conf /etc/hosts $CH/etc/ 2>/dev/null
 echo 'root:x:0:0:root:/work/home:/bin/bash' > $CH/etc/passwd; echo 'root:x:0:' > $CH/etc/group
 mount --bind "$RT" $CH/usr && mount --bind "$APPD" $CH/app && mount --rbind /dev $CH/dev && mount -t proc proc $CH/proc && mount --bind /tmp $CH/tmp && mount --rbind /work $CH/work
-GLD=$(ls -d /var/lib/flatpak/runtime/org.freedesktop.Platform.GL.default/x86_64/*/active/files 2>/dev/null | head -1)
+GLD=$(ls -d /var/lib/flatpak/runtime/org.freedesktop.Platform.GL.default/x86_64/*/active/files 2>/dev/null | grep -v extra | head -1)
+GLX=$(ls -d /var/lib/flatpak/runtime/org.freedesktop.Platform.GL.default/x86_64/*-extra/active/files 2>/dev/null | head -1)
 if [ -n "$GLD" ]; then mkdir -p $CH/usr/lib/x86_64-linux-gnu/GL/default && mount --bind "$GLD" $CH/usr/lib/x86_64-linux-gnu/GL/default; fi
+if [ -n "$GLX" ]; then mkdir -p $CH/usr/lib/x86_64-linux-gnu/GL/default-extra && mount --bind "$GLX" $CH/usr/lib/x86_64-linux-gnu/GL/default-extra; fi
 for l in lib lib64 bin sbin; do ln -sfn usr/$l $CH/$l; done
-printf '/app/lib\n/usr/lib/x86_64-linux-gnu/GL/default/lib\n/usr/lib/x86_64-linux-gnu\n' > $CH/etc/ld.so.conf
+printf '/app/lib\n/usr/lib/x86_64-linux-gnu/GL/default/lib\n/usr/lib/x86_64-linux-gnu/GL/default-extra/lib\n/usr/lib/x86_64-linux-gnu\n' > $CH/etc/ld.so.conf
 for L in /usr/sbin/ldconfig /usr/bin/ldconfig /sbin/ldconfig; do [ -x $CH$L ] && { chroot $CH $L 2>&1 | tail -2; break; }; done
-{ echo "GLD=$GLD"; ls $CH/usr/lib/x86_64-linux-gnu/GL/default 2>&1 | head; ls $CH/usr/lib/x86_64-linux-gnu/GL/default/lib 2>&1 | head -12; } > "$OUT/gl-dirs.txt"
+{ echo "GLD=$GLD GLX=$GLX"; ls $CH/usr/lib/x86_64-linux-gnu/GL/default 2>&1 | head; ls $CH/usr/lib/x86_64-linux-gnu/GL/default/lib 2>&1 | head -12; } > "$OUT/gl-dirs.txt"
 mkdir -p /usr/games
 cat > /usr/games/dolphin-emu <<'WRAP'
 #!/bin/bash
 mkdir -p /work/home
-exec chroot /opt/ch /usr/bin/env HOME=/work/home LIBGL_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/GL/default/lib/dri XDG_DATA_DIRS=/usr/lib/x86_64-linux-gnu/GL/default/share:/usr/share DISPLAY=${DISPLAY:-:99} XDG_RUNTIME_DIR=/tmp PATH=/app/bin:/usr/bin QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 /app/bin/dolphin-emu "$@"
+exec chroot /opt/ch /usr/bin/env HOME=/work/home LIBGL_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/GL/default/lib/dri:/usr/lib/x86_64-linux-gnu/GL/default-extra/lib/dri XDG_DATA_DIRS=/usr/lib/x86_64-linux-gnu/GL/default/share:/usr/share DISPLAY=${DISPLAY:-:99} XDG_RUNTIME_DIR=/tmp PATH=/app/bin:/usr/bin QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 /app/bin/dolphin-emu "$@" 2>>/tmp/dolphin-stderr.txt
 WRAP
 chmod +x /usr/games/dolphin-emu
 flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' | tee "$OUT/version.txt"
@@ -123,6 +125,7 @@ fi
 kill $DP 2>/dev/null || true
 sleep 2
 [ -s "$W/dolphin.log" ] || cp "$W/user/Logs/dolphin.log" "$W/dolphin.log" 2>/dev/null
+tail -40 /tmp/dolphin-stderr.txt 2>/dev/null | cut -c1-200 > "$OUT/dolphin-stderr.txt"
 # Log filtrati (nessun percorso privato, nessun contenuto del disco)
 grep -a -i -E 'riivolution|patch|descriptor|wfc|rwfc|q7x|duckdns|dns|IOS_NET|SSL|NHTTP|nas\.|gpcm|error|failed|version' "$W/dolphin.log" | cut -c1-220 | head -250 > "$OUT/dolphin-filtered.log"
 wc -l "$W/dolphin.log" > "$OUT/dolphin-lines.txt"
