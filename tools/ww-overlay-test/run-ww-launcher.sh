@@ -20,7 +20,7 @@ CH=/opt/ch; mkdir -p $CH/usr $CH/app $CH/dev $CH/proc $CH/sys $CH/tmp $CH/work $
 cp -a "$RT/etc" $CH/etc 2>/dev/null || mkdir -p $CH/etc
 cp /etc/resolv.conf /etc/hosts $CH/etc/ 2>/dev/null
 echo 'root:x:0:0:root:/work/home:/bin/bash' > $CH/etc/passwd; echo 'root:x:0:' > $CH/etc/group
-mount --bind "$RT" $CH/usr && mount --bind "$APPD" $CH/app && mount --rbind /dev $CH/dev && mount -t proc proc $CH/proc && mount --bind /tmp $CH/tmp && mount --bind /work $CH/work
+mount --bind "$RT" $CH/usr && mount --bind "$APPD" $CH/app && mount --rbind /dev $CH/dev && mount -t proc proc $CH/proc && mount --bind /tmp $CH/tmp && mount --rbind /work $CH/work
 for l in lib lib64 bin sbin; do ln -sfn usr/$l $CH/$l; done
 printf '/app/lib\n/usr/lib/x86_64-linux-gnu/GL/default/lib\n/usr/lib/x86_64-linux-gnu\n' > $CH/etc/ld.so.conf
 for L in /usr/sbin/ldconfig /usr/bin/ldconfig /sbin/ldconfig; do [ -x $CH$L ] && { chroot $CH $L 2>&1 | tail -2; break; }; done
@@ -110,7 +110,7 @@ convert "$OUT/ww/02-dopo-skip.png" -resize 200% /tmp/o.png; tesseract /tmp/o.png
 if grep -a -i -E 'out of date|known security' /tmp/o.txt; then echo "DIALOGO_DOLPHIN_OUT_OF_DATE: stop, nessun bypass" > "$OUT/ww/ABORT-out-of-date.txt"; kill $DP 2>/dev/null; exit 1; fi
 for i in 1 2 3 4 5 6 7 8; do
   sleep 10; import -window root "$OUT/ww/03-t$i.png"
-  if xdotool search --name Mario >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi
+  if pgrep -f 'app/bin/dolphin-emu' >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi
 done
 if [ -f "$OUT/ww/dolphin-avviato.txt" ]; then
   python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
@@ -120,6 +120,7 @@ else
 fi
 kill $DP 2>/dev/null || true
 sleep 2
+[ -s "$W/dolphin.log" ] || cp "$W/user/Logs/dolphin.log" "$W/dolphin.log" 2>/dev/null
 # Log filtrati (nessun percorso privato, nessun contenuto del disco)
 grep -a -i -E 'riivolution|patch|descriptor|wfc|rwfc|q7x|duckdns|dns|IOS_NET|SSL|NHTTP|nas\.|gpcm|error|failed|version' "$W/dolphin.log" | cut -c1-220 | head -250 > "$OUT/dolphin-filtered.log"
 wc -l "$W/dolphin.log" > "$OUT/dolphin-lines.txt"
