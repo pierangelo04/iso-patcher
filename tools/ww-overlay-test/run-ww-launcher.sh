@@ -18,7 +18,12 @@ APPD=/var/lib/flatpak/app/org.DolphinEmu.dolphin-emu/x86_64/stable/active/files
 [ -d "$RT" ] && [ -x "$APPD/bin/dolphin-emu" ] || { echo "FLATPAK_FILES_ASSENTI RT=$RT" > "$OUT/ABORT-dolphin.txt"; ls "$APPD/bin" 2>&1 | head; exit 1; }
 CH=/opt/ch; mkdir -p $CH/usr $CH/app $CH/dev $CH/proc $CH/sys $CH/tmp $CH/work $CH/run $CH/var
 cp -a "$RT/etc" $CH/etc 2>/dev/null || mkdir -p $CH/etc
-cp /etc/resolv.conf /etc/hosts $CH/etc/ 2>/dev/null
+# Runtime KDE may ship resolver symlinks; replace links, not their targets.
+rm -f $CH/etc/resolv.conf $CH/etc/hosts $CH/etc/nsswitch.conf
+cp -L /etc/resolv.conf $CH/etc/resolv.conf
+cp -L /etc/hosts $CH/etc/hosts
+printf 'hosts: files dns\nnetworks: files\npasswd: files\ngroup: files\n' > $CH/etc/nsswitch.conf
+{ echo 'container resolver'; cat /etc/resolv.conf; echo 'chroot resolver'; cat $CH/etc/resolv.conf; ls -l $CH/etc/resolv.conf; } > "$OUT/resolver-preflight.txt"
 echo 'root:x:0:0:root:/work/home:/bin/bash' > $CH/etc/passwd; echo 'root:x:0:' > $CH/etc/group
 mount --bind "$RT" $CH/usr && mount --bind "$APPD" $CH/app && mount --rbind /dev $CH/dev && mount -t proc proc $CH/proc && mount --bind /tmp $CH/tmp && mount --rbind /work $CH/work
 GLD=$(ls -d /var/lib/flatpak/runtime/org.freedesktop.Platform.GL.default/x86_64/*/active/files 2>/dev/null | grep -v extra | head -1)
@@ -41,6 +46,14 @@ flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' |
 DV=$(flatpak info org.DolphinEmu.dolphin-emu | awk '/Version:/{print $2}')
 if [ "$(printf '%s\n' 2606a "$DV" | sort -V | head -1)" != "2606a" ]; then echo "DOLPHIN_VULNERABILE $DV" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 export PATH=$PATH:/usr/games
+# Resolve all required endpoints in BOTH namespaces. Stop before WW if chroot DNS fails.
+DNS_OK=1
+for h in nas.q7x.duckdns.org gpcm.gs.q7x.duckdns.org gpsp.gs.q7x.duckdns.org mariokartwii.sake.gs.q7x.duckdns.org; do
+  echo "HOST $h" >> "$OUT/resolver-preflight.txt"
+  getent ahostsv4 "$h" >> "$OUT/resolver-preflight.txt" 2>&1 || DNS_OK=0
+  chroot $CH /usr/bin/getent ahostsv4 "$h" >> "$OUT/resolver-preflight.txt" 2>&1 || DNS_OK=0
+done
+[ "$DNS_OK" = 1 ] || { echo 'DNS namespace preflight failed' > "$OUT/ABORT-dns.txt"; exit 1; }
 cat > "$W/user/Config/Dolphin.ini" <<'INI'
 [Core]
 GFXBackend = Vulkan
@@ -125,6 +138,10 @@ s=s[:a]+'''    if action == "-":
 '''+s[b:]
 
 s=s.replace('tmpl-caption-wfc.png', 'tmpl-caption-wfc-2609.png')
+s=s.replace('    state=known_ui(p)', '''    if '20912' in txt or 'error during login' in txt.lower():
+        open(f"{OUT}/ABORT-login.txt","w").write(txt)
+        break
+    state=known_ui(p)''')
 s=s.replace('log = open(f"{OUT}/drive.log", "w")', '''refs=json.load(open('/work/repo/tools/ww-overlay-test/ui-fingerprints.json'))
 seen_states=set()
 def known_ui(p):
