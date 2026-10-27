@@ -7,12 +7,21 @@ W=/work/$V
 OUT=/work/shots/$V
 mkdir -p "$OUT" "$W/user/Config"
 export DEBIAN_FRONTEND=noninteractive
-if ! command -v dolphin-emu >/dev/null; then
-  apt-get update -qq
-  apt-get install -y -qq dolphin-emu xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri tcpdump dnsutils libc-bin >/dev/null
-fi
+# Dolphin 2512 (apt) e' vulnerabile (advisory GHSA-4q28-hhjv-hf3f, corretto in 2606a): NON usato. Flatpak ufficiale da Flathub.
+apt-get update -qq
+apt-get install -y -qq flatpak xvfb imagemagick x11-utils xdotool procps openbox python3 tesseract-ocr mesa-vulkan-drivers libgl1-mesa-dri tcpdump dnsutils libc-bin ca-certificates >/dev/null
+flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --system -y --noninteractive flathub org.DolphinEmu.dolphin-emu > "$OUT/flatpak-install.log" 2>&1 || { echo "FLATPAK_INSTALL_FALLITO" > "$OUT/ABORT-dolphin.txt"; tail -5 "$OUT/flatpak-install.log"; exit 1; }
+mkdir -p /usr/games
+cat > /usr/games/dolphin-emu <<'WRAP'
+#!/bin/bash
+exec flatpak run --filesystem=/work --filesystem=/tmp --share=network --socket=x11 --env=LIBGL_ALWAYS_SOFTWARE=1 --env=QT_QPA_PLATFORM=xcb org.DolphinEmu.dolphin-emu "$@"
+WRAP
+chmod +x /usr/games/dolphin-emu
+flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' | tee "$OUT/version.txt"
+DV=$(flatpak info org.DolphinEmu.dolphin-emu | awk '/Version:/{print $2}')
+if [ "$(printf '%s\n' 2606a "$DV" | sort -V | head -1)" != "2606a" ]; then echo "DOLPHIN_VULNERABILE $DV" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 export PATH=$PATH:/usr/games
-dolphin-emu --version 2>&1 | head -2 | tee "$OUT/version.txt"
 cat > "$W/user/Config/Dolphin.ini" <<'INI'
 [Core]
 GFXBackend = Vulkan
@@ -78,9 +87,9 @@ mkdir -p "$OUT/ww"
 sleep 25; import -window root "$OUT/ww/01-start.png"
 xdotool mousemove 516 587; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 5
 import -window root "$OUT/ww/02-dopo-skip.png"
-# dialogo "Dolphin out of date" (2512 vs 2606a): Play anyway (~536,484), visto nel frame 02 del run 40525503805; non Update
-xdotool mousemove 536 484; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 4
-import -window root "$OUT/ww/02b-dopo-playanyway.png"
+# Se compare il dialogo "Dolphin out of date" NON lo aggira: esce.
+convert "$OUT/ww/02-dopo-skip.png" -resize 200% /tmp/o.png; tesseract /tmp/o.png /tmp/o --psm 11 >/dev/null 2>&1
+if grep -a -i -E 'out of date|known security' /tmp/o.txt; then echo "DIALOGO_DOLPHIN_OUT_OF_DATE: stop, nessun bypass" > "$OUT/ww/ABORT-out-of-date.txt"; kill $DP 2>/dev/null; exit 1; fi
 for i in 1 2 3 4 5 6 7 8; do
   sleep 10; import -window root "$OUT/ww/03-t$i.png"
   if xdotool search --name Mario >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi

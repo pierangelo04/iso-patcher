@@ -78,6 +78,8 @@ jobs:
           if [ -z "$PICK" ]; then echo "BASE_VANILLA_MEGA=ASSENTE (nessun .iso in $MEGA_ISO_DIR)" | tee shots/base-status.txt; exit 1; fi
           mega-get "$MEGA_ISO_DIR/$(basename "$PICK")" work/base.iso >/dev/null 2>&1
           mega-logout >/dev/null 2>&1 || true
+          mega-quit >/dev/null 2>&1 || true
+          rm -rf "$HOME/.megaCmd" "$HOME/.megaCmd"* 2>/dev/null || true
           SIZE=$(stat -c %s work/base.iso)
           ID6=$(wit ID6 work/base.iso 2>&1 | head -n1)
           echo "BASE_VANILLA_MEGA=PRESENTE size=$SIZE id6=$ID6" | tee shots/base-status.txt
@@ -178,7 +180,7 @@ jobs:
           S="${{ inputs.seconds }}"; S="${S:-300}"
           V=B_overlay
           mkdir -p repo shots; [ -d repo/tools ] || cp -r tools repo/tools
-          docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-ww-launcher.sh "$V" "$S" || echo "WW errore $?"
+          docker run --rm --shm-size=4g --security-opt seccomp=unconfined --security-opt apparmor=unconfined --cap-add SYS_ADMIN --device /dev/fuse -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-ww-launcher.sh "$V" "$S" || echo "WW errore $?"
 
       - name: Carica WW (subito)
         if: ${{ always() && inputs.only == 'WW' }}
