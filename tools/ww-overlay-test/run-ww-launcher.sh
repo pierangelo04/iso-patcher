@@ -38,7 +38,7 @@ if [ "$(printf '%s\n' 2606a "$DV" | sort -V | head -1)" != "2606a" ]; then echo 
 export PATH=$PATH:/usr/games
 cat > "$W/user/Config/Dolphin.ini" <<'INI'
 [Core]
-GFXBackend = Vulkan
+GFXBackend = OGL
 CPUCore = 1
 DSPHLE = True
 EmulationSpeed = 1.0
