@@ -44,9 +44,12 @@ def capmatch(p):
 def hold(k):
     sh(f"xdotool keydown {k}"); time.sleep(0.4); sh(f"xdotool keyup {k}")
 def permit_lit(p):
-    sh(f"convert {p} -crop 350x34+465+430 +repage -colorspace Gray -format '%[fx:mean]' info: > /tmp/pm.txt")
-    try: return float(open("/tmp/pm.txt").read().strip()) > 0.2
-    except Exception: return False
+    v = []
+    for g in ("350x34+465+430", "370x38+445+480"):
+        sh(f"convert {p} -crop {g} +repage -colorspace Gray -format '%[fx:mean]' info: > /tmp/pm.txt")
+        try: v.append(float(open("/tmp/pm.txt").read().strip()))
+        except Exception: return False
+    return v[0] > 0.145 and v[1] < 0.26   # positivi: 0.177/0.185 e 0.198/0.202; negativi: Permit 0.08-0.11, Prohibit 0.31-0.34
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
