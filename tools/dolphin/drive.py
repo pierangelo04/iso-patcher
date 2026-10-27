@@ -36,6 +36,11 @@ def tmatch(p):
     o = sh("compare -metric RMSE /tmp/x.png /work/repo/tools/ww-overlay-test/tmpl-consenso.png null: 2>&1")
     try: return float(o.split()[0]) < 10000
     except Exception: return False
+def capmatch(p):
+    sh(f"convert {p} -crop 300x30+630+532 +repage /tmp/y.png")
+    o = sh("compare -metric RMSE /tmp/y.png /work/repo/tools/ww-overlay-test/tmpl-caption-wfc.png null: 2>&1")
+    try: return float(o.split()[0]) < 5000
+    except Exception: return False
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
@@ -61,10 +66,15 @@ while time.time() - t0 < SECS:
             action = "PREFLIGHT frecce"; wfcclicks = 3
             log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": action, "text": ""}) + "\n"); log.flush()
             break
-        KEYS = ["Down"]
-        for k in KEYS:
-            sh(f"xdotool key {k}"); time.sleep(3)
-        shot(400+n)
+        ok = False
+        for tryn, KEYS in enumerate([["Down"], ["Up", "Down"], ["Down"], ["Up", "Down"]]):
+            if capmatch(shot(400+n+tryn*10)): ok = True; break
+            for k in KEYS:
+                sh(f"xdotool key {k}"); time.sleep(3)
+            if capmatch(shot(405+n+tryn*10)): ok = True; break
+        if not ok:
+            open(f"{OUT}/NOHIGHLIGHT.txt", "w").write("WFC 1P non evidenziato dopo 4 tentativi\n")
+            break
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
     elif (has("Prohibit") or tmatch(p)) and permits < 3:
         permits += 1
