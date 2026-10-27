@@ -69,7 +69,7 @@ for h in q7x.duckdns.org nas.q7x.duckdns.org gpcm.q7x.duckdns.org nas.wiimmfi.de
 (timeout $((SECS+120)) tcpdump -l -nn -i any "port 53 or host 95.135.208.187" > "$W/net.txt" 2>&1 &)
 dolphin-emu -u "$W/user" -b -v Vulkan -e "$W/RR.json" --config=Dolphin.Core.EnableCheats=False --config=Achievements.Achievements.Enabled=False > "$W/dolphin.log" 2>&1 &
 DP=$!
-sed -e "s#/work/shots#$OUT#" -e 's#search --name RMCPTO#search --name "Mario Kart"#' /work/repo/tools/dolphin/drive.py > /tmp/drive.py
+sed -e "s#/work/shots#$OUT#" -e 's#search --name RMCPTO#search --name Mario#' /work/repo/tools/dolphin/drive.py > /tmp/drive.py
 python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
 kill $DP 2>/dev/null || true
 sleep 2

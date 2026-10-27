@@ -15,7 +15,8 @@ on:
       - ww-overlay-test
     paths:
       - ".github/workflows/test-ww-overlay.yml"
-      - "tools/ww-overlay-test/**"
+      - "tools/ww-overlay-test/run-variant.sh"
+      - "tools/ww-overlay-test/xml-only.diff"
   workflow_dispatch:
     inputs:
       seconds:

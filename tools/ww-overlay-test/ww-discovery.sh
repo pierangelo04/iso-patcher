@@ -8,7 +8,7 @@ OUT=/work/shots/ww-real; mkdir -p "$OUT"
 apt-get update -qq
 apt-get install -y -qq xvfb imagemagick x11-utils xdotool openbox curl ca-certificates libicu-dev libfontconfig1 libx11-6 libice6 libsm6 libgl1 dolphin-emu >/dev/null
 export HOME=/work/home; mkdir -p "$HOME"
-curl -fsSL -o /work/WheelWizard_Linux https://github.com/TeamWheelWizard/WheelWizard/releases/download/2.4.5/WheelWizard_Linux
+curl -fsSL -o /work/WheelWizard_Linux https://github.com/TeamWheelWizard/WheelWizard/releases/download/v2.6.4/WheelWizard_Linux
 chmod +x /work/WheelWizard_Linux
 sha256sum /work/WheelWizard_Linux | tee "$OUT/ww-sha256.txt"
 export DISPLAY=:98
