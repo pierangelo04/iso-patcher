@@ -108,6 +108,21 @@ DP=$!
   if grep -a -i -E 'does not exist|Critical' /tmp/e.txt; then echo ABORT_EARLY > "$OUT/ABORT.txt"; pkill -f drive.py; kill $DP 2>/dev/null; fi ) &
 sed -e "s#/work/shots#$OUT#" -e 's#search --name RMCPTO#search --name Mario#' /work/repo/tools/dolphin/drive.py > /tmp/drive.py
 # Fase WW: dialogo "Mii Rendering Setup" (Skip a ~516,587 in 2.6.4), poi Home; screenshot a intervalli, nessun clic alla cieca
+python3 - <<'DRIVER'
+p='/tmp/drive.py'
+s=open(p).read().replace('xdotool key F10', 'true')
+a=s.index('    if action == "-":')
+b=s.index('    log.write(',a)
+s=s[:a]+'''    if action == "-":
+        unk += 1
+        if unk >= 6:
+            open(f"{OUT}/ABORT-unknown-ui.txt", "w").write(txt)
+            break
+    else:
+        unk = 0
+'''+s[b:]
+open(p,'w').write(s)
+DRIVER
 mkdir -p "$OUT/ww"
 sleep 25; import -window root "$OUT/ww/01-start.png"
 xdotool mousemove 516 587; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 5
@@ -120,7 +135,36 @@ for i in 1 2 3 4 5 6 7 8; do
   if pgrep -f 'app/bin/dolphin-emu' >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi
 done
 if [ -f "$OUT/ww/dolphin-avviato.txt" ]; then
-  python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
+  # Known telemetry dialog: reject, never enable reporting.
+  for n in 1 2 3 4 5; do
+    MODAL=$(xdotool search --onlyvisible --name 'Allow Usage Statistics Reporting' 2>/dev/null | head -1)
+    [ -z "$MODAL" ] && break
+    xdotool windowactivate --sync "$MODAL"
+    xdotool mousemove 837 479 click 1
+    sleep 2
+    import -window root "$OUT/ww/04-telemetry-$n.png"
+  done
+  if xdotool search --onlyvisible --name 'Allow Usage Statistics Reporting' >/dev/null 2>&1; then
+    echo 'Telemetry dialog not dismissed, stop' > "$OUT/ABORT-ui.txt"
+  else
+    GAME=$(xdotool search --onlyvisible --name 'Dolphin 2609a.*Mario Kart Wii' 2>/dev/null | head -1)
+    if [ -n "$GAME" ]; then
+      xdotool windowsize "$GAME" 640 480
+      xdotool windowactivate --sync "$GAME"
+      # Align client area to the known template origin, not the outer frame.
+      for n in 1 2; do
+        GX=$(xwininfo -id "$GAME" | awk '/Absolute upper-left X:/{print $4}')
+        GY=$(xwininfo -id "$GAME" | awk '/Absolute upper-left Y:/{print $4}')
+        xdotool windowmove --relative "$GAME" "$((320-GX))" "$((164-GY))"
+        sleep 1
+      done
+      xwininfo -id "$GAME" | grep -E 'Absolute|Width:|Height:' > "$OUT/ww/window-geometry.txt"
+      import -window root "$OUT/ww/05-game-aligned.png"
+      python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
+    else
+      echo 'Game render window not found, stop' > "$OUT/ABORT-ui.txt"
+    fi
+  fi
 else
   echo "Dolphin NON avviato da WW entro 80 s dopo Skip" > "$OUT/ww/dolphin-NON-avviato.txt"
   pgrep -a dolphin > "$OUT/ww/pgrep-dolphin.txt" 2>&1
