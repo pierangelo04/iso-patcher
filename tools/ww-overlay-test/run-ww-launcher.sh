@@ -123,6 +123,25 @@ s=s[:a]+'''    if action == "-":
     else:
         unk = 0
 '''+s[b:]
+
+s=s.replace('log = open(f"{OUT}/drive.log", "w")', '''refs=json.load(open('/work/repo/tools/ww-overlay-test/ui-fingerprints.json'))
+seen_states=set()
+def known_ui(p):
+    raw=sh(f"convert {p} -crop 640x480+320+164 +repage -colorspace Gray -resize 32x24! -depth 8 gray:-", text=False) if False else None
+    run=subprocess.run(['convert',p,'-crop','640x480+320+164','+repage','-colorspace','Gray','-resize','32x24!','-depth','8','gray:-'],capture_output=True)
+    vals=list(run.stdout)
+    if len(vals)!=768: return None
+    scores={k:(sum((x-y)**2 for x,y in zip(vals,v))/768)**.5 for k,v in refs.items()}
+    k=min(scores,key=scores.get)
+    return k if scores[k]<19 else None
+log = open(f"{OUT}/drive.log", "w")''')
+s=s.replace('    if has("Multiplayer") and wfcclicks < 3:', '''    state=known_ui(p)
+    if state and state not in seen_states:
+        seen_states.add(state)
+        targets={'licenses':(505,320),'new-license':(640,430),'choose-mii':(640,430),'confirm-license':(640,430),'license-ready':(640,430),'guest-notice':(640,430)}
+        click(*targets[state]); action='known-state:'+state
+    elif has("Multiplayer") and wfcclicks < 3:''')
+
 open(p,'w').write(s)
 DRIVER
 mkdir -p "$OUT/ww"
@@ -154,18 +173,20 @@ if [ -f "$OUT/ww/dolphin-avviato.txt" ]; then
       xdotool windowsize "$GAME" 640 480
       xdotool windowactivate --sync "$GAME"
       # Align client area to the known template origin, not the outer frame.
-      for n in 1 2; do
+      TX=320; TY=164
+      for n in 1 2 3 4; do
+        xdotool windowmove --sync "$GAME" "$TX" "$TY"; sleep 1
         GX=$(xwininfo -id "$GAME" | awk '/Absolute upper-left X:/{print $4}')
         GY=$(xwininfo -id "$GAME" | awk '/Absolute upper-left Y:/{print $4}')
-        xdotool windowmove --relative "$GAME" "$((320-GX))" "$((164-GY))"
-        sleep 1
+        [ "$GX" = 320 ] && [ "$GY" = 164 ] && break
+        TX=$((TX+320-GX)); TY=$((TY+164-GY))
       done
+      if [ "$GX" != 320 ] || [ "$GY" != 164 ]; then
+        echo "Geometry mismatch $GX $GY" > "$OUT/ABORT-ui.txt"; exit 1
+      fi
       xwininfo -id "$GAME" | grep -E 'Absolute|Width:|Height:' > "$OUT/ww/window-geometry.txt"
       import -window root "$OUT/ww/05-game-aligned.png"
-      (cd "$ROOT" && find RetroRewind6 -type f -print0 | sort -z | xargs -0 sha256sum) > "$OUT/asset-manifest-after.txt"
-      diff -u "$OUT/asset-manifest-before.txt" "$OUT/asset-manifest-after.txt" > "$OUT/asset-diff.txt" || true
-      cp "$W/user/Config/Dolphin.ini" "$OUT/effective-Dolphin.ini.txt"
-      python3 /work/repo/tools/ww-overlay-test/compare-ui.py "$OUT"
+      python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
     else
       echo 'Game render window not found, stop' > "$OUT/ABORT-ui.txt"
     fi
