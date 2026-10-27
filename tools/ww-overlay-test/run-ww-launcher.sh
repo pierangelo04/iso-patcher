@@ -78,6 +78,9 @@ mkdir -p "$OUT/ww"
 sleep 25; import -window root "$OUT/ww/01-start.png"
 xdotool mousemove 516 587; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 5
 import -window root "$OUT/ww/02-dopo-skip.png"
+# dialogo "Dolphin out of date" (2512 vs 2606a): Play anyway (~536,484), visto nel frame 02 del run 40525503805; non Update
+xdotool mousemove 536 484; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 4
+import -window root "$OUT/ww/02b-dopo-playanyway.png"
 for i in 1 2 3 4 5 6 7 8; do
   sleep 10; import -window root "$OUT/ww/03-t$i.png"
   if xdotool search --name Mario >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi
