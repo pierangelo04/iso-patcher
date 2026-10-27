@@ -126,6 +126,7 @@ jobs:
           mkdir -p B_overlay/Load/Riivolution/WheelWizard/riivolution
           cp --remove-destination overlay/riivolution/RetroRewind6.xml B_overlay/Load/Riivolution/WheelWizard/riivolution/RetroRewind6.xml
           cp --remove-destination overlay/RetroRewind6/Binaries/Code.pul.pierwfc overlay/RetroRewind6/Binaries/Code.pul.ufficiale B_overlay/Load/Riivolution/WheelWizard/RetroRewind6/Binaries/
+          cp riivolution/RetroRewind6.xml B_overlay/Load/Riivolution/WheelWizard/riivolution/official-diagnostic.xml
           rm -rf overlay
           df -h . | tail -1
 

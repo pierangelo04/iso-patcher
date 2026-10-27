@@ -69,6 +69,8 @@ HOST_GPU = True
 COMMON = True
 INI
 ROOT=/work/$V/Load/Riivolution/WheelWizard
+# Integrity evidence: all pack files before and after WW, hashes only.
+(cd "$ROOT" && find RetroRewind6 -type f -print0 | sort -z | xargs -0 sha256sum) > "$OUT/asset-manifest-before.txt"
 # Config di Wheel Wizard pre-seminata (percorsi) e avvio automatico di RR all'avvio
 mkdir -p /work/run/CT-MKWII
 cat > /work/run/CT-MKWII/config.json <<CFG
@@ -160,7 +162,10 @@ if [ -f "$OUT/ww/dolphin-avviato.txt" ]; then
       done
       xwininfo -id "$GAME" | grep -E 'Absolute|Width:|Height:' > "$OUT/ww/window-geometry.txt"
       import -window root "$OUT/ww/05-game-aligned.png"
-      python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
+      (cd "$ROOT" && find RetroRewind6 -type f -print0 | sort -z | xargs -0 sha256sum) > "$OUT/asset-manifest-after.txt"
+      diff -u "$OUT/asset-manifest-before.txt" "$OUT/asset-manifest-after.txt" > "$OUT/asset-diff.txt" || true
+      cp "$W/user/Config/Dolphin.ini" "$OUT/effective-Dolphin.ini.txt"
+      python3 /work/repo/tools/ww-overlay-test/compare-ui.py "$OUT"
     else
       echo 'Game render window not found, stop' > "$OUT/ABORT-ui.txt"
     fi
