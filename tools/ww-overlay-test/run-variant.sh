@@ -42,14 +42,14 @@ INI
 ROOT=/work/$V/Load/Riivolution/WheelWizard
 cat > "$W/RR.json" <<JSON
 {
-  "baseFile": "/work/base.iso",
-  "displayName": "RR",
+  "base-file": "/work/base.iso",
+  "display-name": "RR",
   "riivolution": {
     "patches": [
       {
         "options": [
-          {"choice": 1, "optionName": "Pack", "sectionName": "Retro Rewind"},
-          {"choice": 0, "optionName": "My Stuff", "sectionName": "Retro Rewind"}
+          {"choice": 1, "option-name": "Pack", "section-name": "Retro Rewind"},
+          {"choice": 0, "option-name": "My Stuff", "section-name": "Retro Rewind"}
         ],
         "root": "$ROOT",
         "xml": "$ROOT/riivolution/RetroRewind6.xml"
