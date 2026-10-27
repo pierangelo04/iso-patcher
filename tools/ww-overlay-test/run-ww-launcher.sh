@@ -73,7 +73,21 @@ DP=$!
 ( sleep 75; import -window root "$OUT/early.png"; convert "$OUT/early.png" -resize 200% /tmp/e.png; tesseract /tmp/e.png /tmp/e --psm 11 >/dev/null 2>&1; cp /tmp/e.txt "$OUT/early-ocr.txt" 2>/dev/null
   if grep -a -i -E 'does not exist|Critical' /tmp/e.txt; then echo ABORT_EARLY > "$OUT/ABORT.txt"; pkill -f drive.py; kill $DP 2>/dev/null; fi ) &
 sed -e "s#/work/shots#$OUT#" -e 's#search --name RMCPTO#search --name Mario#' /work/repo/tools/dolphin/drive.py > /tmp/drive.py
-python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
+# Fase WW: dialogo "Mii Rendering Setup" (Skip a ~516,587 in 2.6.4), poi Home; screenshot a intervalli, nessun clic alla cieca
+mkdir -p "$OUT/ww"
+sleep 25; import -window root "$OUT/ww/01-start.png"
+xdotool mousemove 516 587; sleep 1; xdotool mousedown 1; sleep 0.4; xdotool mouseup 1; sleep 5
+import -window root "$OUT/ww/02-dopo-skip.png"
+for i in 1 2 3 4 5 6 7 8; do
+  sleep 10; import -window root "$OUT/ww/03-t$i.png"
+  if xdotool search --name Mario >/dev/null 2>&1; then echo "dolphin comparso dopo $i*10 s" > "$OUT/ww/dolphin-avviato.txt"; break; fi
+done
+if [ -f "$OUT/ww/dolphin-avviato.txt" ]; then
+  python3 /tmp/drive.py "$SECS" 2>&1 | tail -3
+else
+  echo "Dolphin NON avviato da WW entro 80 s dopo Skip" > "$OUT/ww/dolphin-NON-avviato.txt"
+  pgrep -a dolphin > "$OUT/ww/pgrep-dolphin.txt" 2>&1
+fi
 kill $DP 2>/dev/null || true
 sleep 2
 # Log filtrati (nessun percorso privato, nessun contenuto del disco)
