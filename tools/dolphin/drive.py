@@ -61,7 +61,7 @@ while time.time() - t0 < SECS:
             sh(f"xdotool key {k}"); time.sleep(3)
         shot(400+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
-    elif has("Prohibit") and has("Permit") and permits < 3:
+    elif has("Prohibit") and permits < 3:
         permits += 1
         sh("xdotool key Up"); time.sleep(3); shot(700+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(3); shot(800+n); time.sleep(5); shot(900+n)
