@@ -34,7 +34,7 @@ def find(words, w):
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
-t0 = time.time(); n = 0; last = ""; mainclicks = 0; wfcclicks = 0; unk = 0; online = False
+t0 = time.time(); n = 0; last = ""; mainclicks = 0; wfcclicks = 0; permits = 0; unk = 0; online = False
 while time.time() - t0 < SECS:
     n += 1
     p = shot(n)
@@ -61,6 +61,11 @@ while time.time() - t0 < SECS:
             sh(f"xdotool key {k}"); time.sleep(3)
         shot(400+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
+    elif has("Prohibit") and has("Permit") and permits < 3:
+        permits += 1
+        sh("xdotool key Up"); time.sleep(3); shot(700+n)
+        sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(3); shot(800+n); time.sleep(5); shot(900+n)
+        action = f"Permit via Up + A (tentativo {permits})"
     elif has("Main Menu") and find(words, "WFC"):
         x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
     elif has("sure") and has("OK"):
