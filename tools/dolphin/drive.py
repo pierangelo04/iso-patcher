@@ -41,6 +41,12 @@ def capmatch(p):
     o = sh("compare -metric RMSE /tmp/y.png /work/repo/tools/ww-overlay-test/tmpl-caption-wfc.png null: 2>&1")
     try: return float(o.split()[0]) < 5000
     except Exception: return False
+def hold(k):
+    sh(f"xdotool keydown {k}"); time.sleep(0.4); sh(f"xdotool keyup {k}")
+def permit_lit(p):
+    sh(f"convert {p} -crop 350x34+465+430 +repage -colorspace Gray -format '%[fx:mean]' info: > /tmp/pm.txt")
+    try: return float(open("/tmp/pm.txt").read().strip()) > 0.2
+    except Exception: return False
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
@@ -70,7 +76,7 @@ while time.time() - t0 < SECS:
         for tryn, KEYS in enumerate([["Down"], ["Up", "Down"], ["Down"], ["Up", "Down"]]):
             if capmatch(shot(400+n+tryn*10)): ok = True; break
             for k in KEYS:
-                sh(f"xdotool key {k}"); time.sleep(3)
+                hold(k); time.sleep(3)
             if capmatch(shot(405+n+tryn*10)): ok = True; break
         if not ok:
             open(f"{OUT}/NOHIGHLIGHT.txt", "w").write("WFC 1P non evidenziato dopo 4 tentativi\n")
@@ -78,7 +84,13 @@ while time.time() - t0 < SECS:
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
     elif (has("Prohibit") or tmatch(p)) and permits < 3:
         permits += 1
-        sh("xdotool key Up"); time.sleep(3); shot(700+n)
+        okp = False
+        for tryn in range(4):
+            hold("Up"); time.sleep(3); q = shot(700+n+tryn)
+            if permit_lit(q): okp = True; break
+        if not okp:
+            open(f"{OUT}/NOPERMIT.txt", "w").write("Permit non evidenziato dopo 4 Up tenuti\n")
+            break
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(3); shot(800+n); time.sleep(5); shot(900+n)
         action = f"Permit via Up + A (tentativo {permits})"
     elif has("Main Menu") and find(words, "WFC"):
