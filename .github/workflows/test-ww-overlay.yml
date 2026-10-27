@@ -98,11 +98,12 @@ jobs:
           cp RetroRewind6/Binaries/Code.pul overlay/RetroRewind6/Binaries/Code.pul.ufficiale
           cp RetroRewind6/Binaries/Code.pul overlay/RetroRewind6/Binaries/Code.pul.pierwfc
           python3 ../tools/pierwfc/patch_code_pul.py overlay/RetroRewind6/Binaries/Code.pul.pierwfc q7x.duckdns.org ../tools/pierwfc/pierwfc-public-key.pem
-          cp riivolution/RetroRewind6.xml overlay/riivolution/RetroRewind6.xml
+          # l'XML ufficiale e' CRLF; il pacchetto #1333 ha XML con LF: normalizza, poi applica il diff
+          tr -d '\r' < riivolution/RetroRewind6.xml > overlay/riivolution/RetroRewind6.xml
           file riivolution/RetroRewind6.xml; tail -c 24 riivolution/RetroRewind6.xml | xxd | tail -2; head -c 48 riivolution/RetroRewind6.xml | xxd | head -2
           X=overlay/riivolution/RetroRewind6.xml
           patch --dry-run "$X" < ../tools/ww-overlay-test/xml-only.diff && patch "$X" < ../tools/ww-overlay-test/xml-only.diff || {
-            echo "patch standard fallita, provo --ignore-whitespace"; cp riivolution/RetroRewind6.xml "$X"
+            echo "patch standard fallita, provo --ignore-whitespace"; tr -d '\r' < riivolution/RetroRewind6.xml > "$X"
             patch -l "$X" < ../tools/ww-overlay-test/xml-only.diff || true; }
           rm -f overlay/riivolution/*.orig overlay/riivolution/*.rej
           H1=$(sha256sum overlay/RetroRewind6/Binaries/Code.pul.pierwfc | cut -d' ' -f1)
