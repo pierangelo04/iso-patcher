@@ -36,11 +36,6 @@ flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' |
 DV=$(flatpak info org.DolphinEmu.dolphin-emu | awk '/Version:/{print $2}')
 if [ "$(printf '%s\n' 2606a "$DV" | sort -V | head -1)" != "2606a" ]; then echo "DOLPHIN_VULNERABILE $DV" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 export PATH=$PATH:/usr/games
-# Preflight: il Dolphin Flatpak deve riuscire a partire e dichiarare la versione (stessa chiamata che usa WW), altrimenti stop prima di WW
-export DISPLAY=:99
-( /usr/games/dolphin-emu --version > "$OUT/dolphin-version-check.txt" 2>&1; echo "exit=$?" >> "$OUT/dolphin-version-check.txt" )
-{ bwrap --version; flatpak --version; id; cat /proc/sys/kernel/unprivileged_userns_clone 2>&1; } >> "$OUT/dolphin-version-check.txt" 2>&1
-if ! grep -q 'exit=0' "$OUT/dolphin-version-check.txt"; then echo "DOLPHIN_FLATPAK_NON_ESEGUIBILE" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 cat > "$W/user/Config/Dolphin.ini" <<'INI'
 [Core]
 GFXBackend = Vulkan
@@ -84,6 +79,10 @@ ln -sfn "$W/Load" "$W/user/Load"
 export LIBGL_ALWAYS_SOFTWARE=1 QT_QPA_PLATFORM=xcb DISPLAY=:99
 Xvfb :99 -screen 0 1280x800x24 &
 sleep 3; openbox >/dev/null 2>&1 & sleep 2
+# Preflight: il Dolphin Flatpak deve riuscire a partire e dichiarare la versione (stessa chiamata che usa WW), altrimenti stop prima di WW
+( /usr/games/dolphin-emu --version > "$OUT/dolphin-version-check.txt" 2>&1; echo "exit=$?" >> "$OUT/dolphin-version-check.txt" )
+{ bwrap --version; flatpak --version; id; cat /proc/sys/kernel/unprivileged_userns_clone 2>&1; } >> "$OUT/dolphin-version-check.txt" 2>&1
+if ! grep -q 'exit=0' "$OUT/dolphin-version-check.txt"; then echo "DOLPHIN_FLATPAK_NON_ESEGUIBILE" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 for h in q7x.duckdns.org nas.q7x.duckdns.org gpcm.q7x.duckdns.org nas.wiimmfi.de nas.rwfc.net; do echo "DNS $h: $(getent hosts $h | head -1)"; done | tee "$OUT/dns.txt"
 (timeout $((SECS+120)) tcpdump -l -nn -i any "port 53 or host 95.135.208.187" > "$W/net.txt" 2>&1 &)
 # Tutte le nuove connessioni TCP (SYN) e tutto il DNS, senza payload
