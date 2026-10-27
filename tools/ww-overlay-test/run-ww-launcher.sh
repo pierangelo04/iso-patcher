@@ -124,6 +124,7 @@ s=s[:a]+'''    if action == "-":
         unk = 0
 '''+s[b:]
 
+s=s.replace('tmpl-caption-wfc.png', 'tmpl-caption-wfc-2609.png')
 s=s.replace('log = open(f"{OUT}/drive.log", "w")', '''refs=json.load(open('/work/repo/tools/ww-overlay-test/ui-fingerprints.json'))
 seen_states=set()
 def known_ui(p):
