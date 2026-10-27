@@ -22,6 +22,11 @@ flatpak info org.DolphinEmu.dolphin-emu 2>&1 | grep -E 'Version|Commit|Origin' |
 DV=$(flatpak info org.DolphinEmu.dolphin-emu | awk '/Version:/{print $2}')
 if [ "$(printf '%s\n' 2606a "$DV" | sort -V | head -1)" != "2606a" ]; then echo "DOLPHIN_VULNERABILE $DV" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 export PATH=$PATH:/usr/games
+# Preflight: il Dolphin Flatpak deve riuscire a partire e dichiarare la versione (stessa chiamata che usa WW), altrimenti stop prima di WW
+export DISPLAY=:99
+( /usr/games/dolphin-emu --version > "$OUT/dolphin-version-check.txt" 2>&1; echo "exit=$?" >> "$OUT/dolphin-version-check.txt" )
+{ bwrap --version; flatpak --version; id; cat /proc/sys/kernel/unprivileged_userns_clone 2>&1; } >> "$OUT/dolphin-version-check.txt" 2>&1
+if ! grep -q 'exit=0' "$OUT/dolphin-version-check.txt"; then echo "DOLPHIN_FLATPAK_NON_ESEGUIBILE" > "$OUT/ABORT-dolphin.txt"; exit 1; fi
 cat > "$W/user/Config/Dolphin.ini" <<'INI'
 [Core]
 GFXBackend = Vulkan
