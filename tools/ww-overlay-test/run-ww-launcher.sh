@@ -28,12 +28,12 @@ if [ -n "$GLX" ]; then mkdir -p $CH/usr/lib/x86_64-linux-gnu/GL/default-extra &&
 for l in lib lib64 bin sbin; do ln -sfn usr/$l $CH/$l; done
 printf '/app/lib\n/usr/lib/x86_64-linux-gnu/GL/default/lib\n/usr/lib/x86_64-linux-gnu/GL/default-extra/lib\n/usr/lib/x86_64-linux-gnu\n' > $CH/etc/ld.so.conf
 for L in /usr/sbin/ldconfig /usr/bin/ldconfig /sbin/ldconfig; do [ -x $CH$L ] && { chroot $CH $L 2>&1 | tail -2; break; }; done
-{ echo "GLD=$GLD GLX=$GLX"; ls $CH/usr/lib/x86_64-linux-gnu/GL/default 2>&1 | head; ls $CH/usr/lib/x86_64-linux-gnu/GL/default/lib 2>&1 | head -12; ls $CH/usr/lib/x86_64-linux-gnu/GL/default*/share/vulkan/icd.d 2>&1 | head; } > "$OUT/gl-dirs.txt"
+{ echo "GLD=$GLD GLX=$GLX"; ls $CH/usr/lib/x86_64-linux-gnu/GL/default 2>&1 | head; ls $CH/usr/lib/x86_64-linux-gnu/GL/default/lib 2>&1 | head -12; ls $CH/usr/lib/x86_64-linux-gnu/GL/default*/vulkan/icd.d 2>&1 | head; } > "$OUT/gl-dirs.txt"
 mkdir -p /usr/games
 cat > /usr/games/dolphin-emu <<'WRAP'
 #!/bin/bash
 mkdir -p /work/home
-ICD=$(ls /opt/ch/usr/lib/x86_64-linux-gnu/GL/default*/share/vulkan/icd.d/*lvp*.json 2>/dev/null | head -1 | sed 's#^/opt/ch##')
+ICD=$(ls /opt/ch/usr/lib/x86_64-linux-gnu/GL/default*/vulkan/icd.d/*lvp*.json 2>/dev/null | head -1 | sed 's#^/opt/ch##')
 exec chroot /opt/ch /usr/bin/env VK_ICD_FILENAMES=$ICD VK_DRIVER_FILES=$ICD HOME=/work/home LIBGL_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/GL/default/lib/dri:/usr/lib/x86_64-linux-gnu/GL/default-extra/lib/dri XDG_DATA_DIRS=/usr/lib/x86_64-linux-gnu/GL/default/share:/usr/share DISPLAY=${DISPLAY:-:99} XDG_RUNTIME_DIR=/tmp PATH=/app/bin:/usr/bin QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 /app/bin/dolphin-emu "$@" 2>>/tmp/dolphin-stderr.txt
 WRAP
 chmod +x /usr/games/dolphin-emu
