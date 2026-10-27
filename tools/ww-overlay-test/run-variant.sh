@@ -81,6 +81,7 @@ grep -a -i -E 'riivolution|patch|descriptor|wfc|rwfc|q7x|duckdns|dns|IOS_NET|SSL
 wc -l "$W/dolphin.log" > "$OUT/dolphin-lines.txt"
 grep -a -E 'q7x|rwfc|wiimmfi|95\.135\.208\.187|\.duckdns' "$W/net.txt" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8}' | head -80 > "$OUT/net-filtered.txt"
 grep -a -c . "$W/net.txt" > "$OUT/net-lines.txt"
+find "$W/user/Config" -name "WiimoteNew.ini" -exec grep -a -E "^\[Wiimote1\]|Source|^Buttons/A|^D-Pad|^IR/|Extension" {} \; > "$OUT/wiimote-profile.txt" 2>&1
 # Cosa ha caricato Dolphin: nome del file Code.pul effettivamente letto non e' visibile; segnala presenza strutture
 ls -la "$ROOT/riivolution" "$ROOT/RetroRewind6/Binaries" > "$OUT/tree-binaries.txt" 2>&1
 sha256sum "$ROOT/riivolution/RetroRewind6.xml" "$ROOT/RetroRewind6/Binaries/"Code.pul* > "$OUT/hashes.txt" 2>&1

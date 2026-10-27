@@ -46,6 +46,16 @@ while time.time() - t0 < SECS:
         wfcclicks += 1; online = True
         POS = [(600,480),(600,480),(600,482)]
         x, y = POS[(wfcclicks-1) % len(POS)]
+        if SECS <= 200:   # PREFLIGHT: solo frecce + frame di evidenziazione, nessun A
+            f = open(f"{OUT}/focus.txt", "a")
+            f.write("focus: " + sh("xdotool getwindowfocus getwindowname") + "\n")
+            shot(300+n)
+            for i, k in enumerate(["Down", "Right", "Left", "Up", "Down"]):
+                sh(f"xdotool key --delay 200 {k}"); time.sleep(4); shot(310+i)
+                f.write(f"dopo {k}: shot s-{310+i}\n"); f.flush()
+            action = "PREFLIGHT frecce"; wfcclicks = 3
+            log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": action, "text": ""}) + "\n"); log.flush()
+            break
         KEYS = [["Down"], ["Down","Down"], ["Left","Down"]][wfcclicks-1]
         for k in KEYS:
             sh(f"xdotool key {k}"); time.sleep(3)
