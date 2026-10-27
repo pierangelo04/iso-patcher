@@ -56,7 +56,7 @@ while time.time() - t0 < SECS:
             action = "PREFLIGHT frecce"; wfcclicks = 3
             log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": action, "text": ""}) + "\n"); log.flush()
             break
-        KEYS = [["Down"], ["Down","Down"], ["Left","Down"]][wfcclicks-1]
+        KEYS = ["Down"]
         for k in KEYS:
             sh(f"xdotool key {k}"); time.sleep(3)
         shot(400+n)
