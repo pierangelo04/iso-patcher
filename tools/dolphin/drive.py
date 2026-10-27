@@ -31,6 +31,11 @@ def find(words, w):
     for t, x, y, c in words:
         if t.lower().strip(".,!?") == w.lower(): return int(x), int(y)
     return None
+def tmatch(p):
+    sh(f"convert {p} -crop 400x110+440+425 +repage /tmp/x.png")
+    o = sh("compare -metric RMSE /tmp/x.png /work/repo/tools/ww-overlay-test/tmpl-consenso.png null: 2>&1")
+    try: return float(o.split()[0]) < 10000
+    except Exception: return False
 log = open(f"{OUT}/drive.log", "w")
 time.sleep(40)
 w = wid(); sh(f"xdotool windowfocus {w}; xdotool key F10")   # parte in pausa
@@ -61,7 +66,7 @@ while time.time() - t0 < SECS:
             sh(f"xdotool key {k}"); time.sleep(3)
         shot(400+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
-    elif has("Prohibit") and permits < 3:
+    elif (has("Prohibit") or tmatch(p)) and permits < 3:
         permits += 1
         sh("xdotool key Up"); time.sleep(3); shot(700+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(3); shot(800+n); time.sleep(5); shot(900+n)
@@ -90,6 +95,12 @@ while time.time() - t0 < SECS:
     elif has("Single Player") and not has("Main Menu"):
         yy = find(words, "Back")
         if yy: click(*yy); action = "click Back (percorso sbagliato)"
+    if permits >= 3 and tmatch(p):
+        stuck = globals().get("stuck", 0) + 1; globals()["stuck"] = stuck
+        if stuck >= 3:
+            open(f"{OUT}/STUCK.txt", "w").write("ancora sulla domanda Permit/Prohibit dopo 3 tentativi\n")
+            log.write(json.dumps({"n": n, "t": int(time.time() - t0), "action": "STUCK stop", "text": ""}) + "\n"); log.flush()
+            break
     if action == "-":
         unk += 1
         if unk == 3:
