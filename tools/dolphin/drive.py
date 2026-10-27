@@ -46,7 +46,10 @@ while time.time() - t0 < SECS:
         wfcclicks += 1; online = True
         POS = [(600,480),(600,480),(600,482)]
         x, y = POS[(wfcclicks-1) % len(POS)]
-        sh(f"xdotool mousemove {x-6} {y-4}"); time.sleep(1); sh(f"xdotool mousemove {x} {y}"); time.sleep(6); shot(400+n)
+        KEYS = [["Down"], ["Down","Down"], ["Left","Down"]][wfcclicks-1]
+        for k in KEYS:
+            sh(f"xdotool key {k}"); time.sleep(3)
+        shot(400+n)
         sh("xdotool mousedown 1"); time.sleep(1.5); sh("xdotool mouseup 1"); time.sleep(2); shot(500+n); time.sleep(6); shot(600+n); action = f"click Retro WFC {x},{y}"
     elif has("Main Menu") and find(words, "WFC"):
         x, y = find(words, "WFC"); click(x, y); action = f"click WFC {x},{y}"
