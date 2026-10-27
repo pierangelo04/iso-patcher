@@ -129,9 +129,32 @@ jobs:
           set -x
           S="${{ inputs.seconds }}"; S="${S:-300}"
           mkdir -p repo; cp -r tools repo/tools
-          for V in A_ufficiale B_overlay; do
-            docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-variant.sh "$V" "$S" || echo "variante $V terminata con errore $?"
-          done
+          V=A_ufficiale
+          docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-variant.sh "$V" "$S" || echo "variante $V errore $?"
+          test -f shots/$V/ABORT.txt && { echo "::error::abort precoce su $V (dialogo errore)"; exit 1; } || true
+
+      - name: Carica A (subito)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-A
+          retention-days: 3
+          path: shots/A_ufficiale
+
+      - name: Dolphin B overlay
+        shell: bash
+        run: |
+          S="${{ inputs.seconds }}"; S="${S:-300}"
+          V=B_overlay
+          docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-variant.sh "$V" "$S" || echo "variante $V errore $?"
+
+      - name: Carica B (subito)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-B
+          retention-days: 3
+          path: shots/B_overlay
 
       - name: Vero Wheel Wizard (esplorativo)
         continue-on-error: true
