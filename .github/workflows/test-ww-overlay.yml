@@ -152,6 +152,7 @@ jobs:
         run: |
           S="${{ inputs.seconds }}"; S="${S:-300}"
           V=B_overlay
+          mkdir -p repo shots; [ -d repo/tools ] || cp -r tools repo/tools
           docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-variant.sh "$V" "$S" || echo "variante $V errore $?"
 
       - name: Carica B (subito)
