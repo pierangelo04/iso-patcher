@@ -1,0 +1,122 @@
+name: Test WiiCompiled beta (come distribuito da Wheel Wizard)
+
+# Test singolo, solo branch ww-overlay-test. Nessun merge, nessun upload su Drive, nessuna VPS.
+# Repo pubblico: log/artifact pubblici. Non si carica ISO, pack o credenziali: solo screenshot e riepiloghi filtrati.
+# Isolamento: i secrets MEGA esistono SOLO nel passo che scarica la base; poi la sessione MEGA viene
+# cancellata. Il binario terzo gira dopo, senza secrets e senza token nell'ambiente.
+
+on:
+  push:
+    branches: [ww-overlay-test]
+    paths: [".github/workflows/test-wiicompiled.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  WC_TAG: v0.9.3
+  WC_ASSET: WiiCompiled-Setup-x86_64.AppImage
+  WC_SHA256: 4b2d5875b0f625b84a03a06fca0ef11bbbf401f6680c924f08fcb29248196486
+  WC_URL: https://github.com/patchzyy/Wiicompiled/releases/download/v0.9.3/WiiCompiled-Setup-x86_64.AppImage
+  PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
+  WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
+  MEGA_ISO_DIR: /iso-originale
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepara strumenti
+        run: |
+          set -eu
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          mkdir -p work shots
+          curl -fsSL -o /tmp/wit.tar.gz "$WIT_URL"; tar xzf /tmp/wit.tar.gz -C /tmp
+          sudo install -m755 "$(ls -d /tmp/wit-v3.05a* | head -n1)/bin/wit" /usr/local/bin/wit
+          source /etc/os-release
+          DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+          wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+          sudo apt-get install -y "/tmp/${DEB}" >/dev/null
+          sudo apt-get install -y xvfb xdotool imagemagick tcpdump mesa-vulkan-drivers libgl1-mesa-dri libvulkan1 libegl1 >/dev/null
+
+      - name: Base vanilla da MEGA (unico passo con secrets)
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        run: |
+          set -eu
+          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD" >/dev/null 2>&1
+          PICK=$(mega-ls "$MEGA_ISO_DIR" 2>/dev/null | grep -i '\.iso$' | head -n1 | tr -d '\r' | xargs)
+          mega-get "$MEGA_ISO_DIR/$(basename "$PICK")" work/base.iso >/dev/null 2>&1
+          mega-logout >/dev/null 2>&1 || true
+          mega-quit >/dev/null 2>&1 || true
+          rm -rf "$HOME/.megaCmd" "$HOME"/.megaCmd* "$HOME"/.mega* 2>/dev/null || true
+          echo "base id6=$(wit ID6 work/base.iso | head -n1) size=$(stat -c %s work/base.iso)"
+          pgrep -a mega || true
+
+      - name: Cartella Retro Rewind ufficiale (come la prepara WW)
+        run: |
+          set -eu
+          cd work
+          curl -fL --retry 5 --retry-all-errors -A "Mozilla/5.0" -o rr.zip "$PACK_ZIP_URL"
+          mkdir rrsrc && unzip -q rr.zip 'RetroRewind6/*' 'riivolution/RetroRewind6.xml' -d rrsrc
+          rm -f rr.zip; du -sh rrsrc
+
+      - name: Scarica WiiCompiled (digest verificato) ed esamina
+        run: |
+          set -eu
+          cd work
+          curl -fL -o wc.AppImage "$WC_URL"
+          echo "$WC_SHA256  wc.AppImage" | sha256sum -c - | tee ../shots/wc-sha256.txt
+          chmod +x wc.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./wc.AppImage --version 2>&1 | head -5 | tee ../shots/wc-version.txt || true
+          ./wc.AppImage install --help 2>&1 | head -40 | tee ../shots/wc-install-help.txt || true
+
+      - name: Installazione come WW (senza secrets) con cattura destinazioni di rete
+        run: |
+          set -u
+          cd work
+          sudo tcpdump -i any -nn -l 'udp port 53 or (tcp[tcpflags] & tcp-syn != 0)' > ../net-raw.txt 2>/dev/null &
+          sleep 2
+          export APPIMAGE_EXTRACT_AND_RUN=1 HOME=$RUNNER_TEMP/wchome; mkdir -p $HOME
+          env -u GITHUB_TOKEN timeout 1500 ./wc.AppImage install --game "$PWD/base.iso" --retro-dir "$PWD/rrsrc" --download-retro-wfc-payload --progress-json > ../install-out.txt 2>&1
+          echo "install exit=$?" | tee ../shots/install-exit.txt
+          grep -a -o '"\(event\|stage\|phase\|message\|status\|percent\|error\)"[^,}]*' ../install-out.txt | tail -40 | tee ../shots/install-summary.txt
+          tail -c 1500 ../install-out.txt | tee ../shots/install-tail.txt | sed 's#/home/[^ ]*#<home>#g'
+
+      - name: Avvio gioco sotto Xvfb (software rendering) e screenshot
+        run: |
+          set -u
+          export APPIMAGE_EXTRACT_AND_RUN=1 HOME=$RUNNER_TEMP/wchome DISPLAY=:99 SDL_AUDIODRIVER=dummy LIBGL_ALWAYS_SOFTWARE=1 SDL_VIDEODRIVER=x11
+          Xvfb :99 -screen 0 1280x720x24 &
+          sleep 3
+          S=$(find "$HOME" -name 'WiiCompiled-Setup*.AppImage' | head -n1); [ -n "$S" ] || S=work/wc.AppImage
+          echo "launcher=$(basename $S)"
+          (timeout 420 "$S" launch-retro > launch-out.txt 2>&1; echo "launch exit=$?" > launch-exit.txt) &
+          for i in 1 2 3 4 5 6 7 8; do sleep 40; import -window root shots/launch-$i.png 2>/dev/null || true; xdotool search --onlyvisible --name . getwindowname %@ 2>/dev/null | head -3 | tee -a shots/windows.txt; done
+          sleep 20; cat launch-exit.txt 2>/dev/null || echo "launch ancora in corso al termine osservazione"
+          tail -c 1200 launch-out.txt | sed 's#/home/[^ ]*#<home>#g' | tee shots/launch-tail.txt
+
+      - name: Riepilogo destinazioni di rete (solo nomi host, no pcap)
+        if: always()
+        run: |
+          sudo pkill tcpdump || true
+          { echo "== nomi DNS interrogati"; grep -a -o 'A? [A-Za-z0-9._-]*' net-raw.txt | awk '{print $2}' | sort | uniq -c | sort -rn | head -40
+            echo "== porte TCP SYN verso (IP:porta, conteggio)"; grep -a 'Flags \[S\]' net-raw.txt | awk '{print $5}' | sed 's/:$//' | sort | uniq -c | sort -rn | head -30; } | tee shots/net-summary.txt
+
+      - name: Pulizia ISO e artifact minimizzato
+        if: always()
+        run: rm -rf work/base.iso net-raw.txt install-out.txt launch-out.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wiicompiled-shots
+          path: shots/
+          retention-days: 3
