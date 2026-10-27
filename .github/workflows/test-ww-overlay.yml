@@ -1,0 +1,151 @@
+name: Test overlay PierWFC (Wheel Wizard 6.13.4)
+
+# Test controllato SOLO su branch ww-overlay-test, nessun merge, nessun upload su Drive.
+# Il repo e' pubblico: log e artifact sono pubblici, quindi NON si carica nessuna ISO,
+# credenziale o pack. Solo screenshot e log filtrati.
+#  - base: ISO vanilla PAL da MEGA /iso-originale (secrets esistenti)
+#  - overlay: generato nel runner da fonti ufficiali + patcher e chiave pubblica del repo,
+#    con controllo degli stessi SHA256 del pacchetto #1333
+#  - variante "ufficiale" (XML originale) e variante "overlay" a confronto
+#  - passo "ww-real": avvia il vero Wheel Wizard 2.4.5 (esplorativo)
+
+on:
+  push:
+    branches:
+      - ww-overlay-test
+    paths:
+      - ".github/workflows/test-ww-overlay.yml"
+      - "tools/ww-overlay-test/**"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Secondi di emulazione per variante"
+        type: string
+        default: "300"
+
+permissions:
+  contents: read
+
+env:
+  PACK_ZIP_URL: https://update.rwfc.net/RetroRewind/zip/RetroRewind.zip
+  WIT_URL: https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz
+  MEGA_ISO_DIR: /iso-originale
+  EXP_CODE_PUL_OFFICIAL: 11f70007b093d5490ad6ad85868eff4d62b6d80f6ff321cd0c9dec2c59e1b640
+  EXP_XML_OFFICIAL: 8759d8d9e14406de3bd5a4981a30a58826c9b952cfc856a997a267b3896e3a41
+  EXP_XML_OVERLAY: 372b2444f7456b12190b707c49370e169bc928bad7cf6fc93d5b4d06e1c55581
+  EXP_CODE_PUL_PIERWFC: 510451639a3b297ddeba85d8266087f9f73b82b8ce45b0d160460b1a82fdee65
+
+jobs:
+  test:
+    runs-on: ubuntu-latest   # runner standard: gratuito su repo pubblico
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Libera spazio disco
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / | tail -1
+
+      - name: Installa wit e MEGAcmd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o /tmp/wit.tar.gz "$WIT_URL"
+          tar xzf /tmp/wit.tar.gz -C /tmp
+          sudo install -m755 "$(ls -d /tmp/wit-v3.05a* | head -n1)/bin/wit" /usr/local/bin/wit
+          source /etc/os-release
+          DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
+          wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
+          sudo apt install -y "/tmp/${DEB}" >/dev/null
+
+      - name: Scarica base vanilla da MEGA (verifica esistenza oggi)
+        shell: bash
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p work shots
+          if [ -z "${MEGA_USERNAME:-}" ] || [ -z "${MEGA_PASSWORD:-}" ]; then echo "::error::secrets MEGA mancanti"; exit 1; fi
+          mega-login "$MEGA_USERNAME" "$MEGA_PASSWORD" >/dev/null 2>&1
+          PICK=$(mega-ls "$MEGA_ISO_DIR" 2>/dev/null | grep -i '\.iso$' | head -n1 | tr -d '\r' | xargs || true)
+          if [ -z "$PICK" ]; then echo "BASE_VANILLA_MEGA=ASSENTE (nessun .iso in $MEGA_ISO_DIR)" | tee shots/base-status.txt; exit 1; fi
+          mega-get "$MEGA_ISO_DIR/$(basename "$PICK")" work/base.iso >/dev/null 2>&1
+          mega-logout >/dev/null 2>&1 || true
+          SIZE=$(stat -c %s work/base.iso)
+          ID6=$(wit ID6 work/base.iso 2>&1 | head -n1)
+          echo "BASE_VANILLA_MEGA=PRESENTE size=$SIZE id6=$ID6" | tee shots/base-status.txt
+          echo "$ID6" | grep -q RMCP01
+
+      - name: Prepara pack ufficiale 6.13.4 e overlay (con controlli hash)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd work
+          curl -fL --retry 5 --retry-all-errors -A "Mozilla/5.0" -o RetroRewind.zip "$PACK_ZIP_URL"
+          unzip -q RetroRewind.zip 'RetroRewind6/*' 'riivolution/RetroRewind6.xml'
+          rm -f RetroRewind.zip
+          du -sh RetroRewind6
+          OFF_CODE=$(sha256sum RetroRewind6/Binaries/Code.pul | cut -d' ' -f1)
+          OFF_XML=$(sha256sum riivolution/RetroRewind6.xml | cut -d' ' -f1)
+          { echo "official Code.pul sha256 $OFF_CODE (atteso $EXP_CODE_PUL_OFFICIAL)"; echo "official xml sha256 $OFF_XML (atteso $EXP_XML_OFFICIAL)"; } | tee ../shots/official-hashes.txt
+          [ "$OFF_CODE" = "$EXP_CODE_PUL_OFFICIAL" ] || { echo "::error::pack ufficiale cambiato rispetto a 6.13.4 verificato: mi fermo"; exit 1; }
+          [ "$OFF_XML" = "$EXP_XML_OFFICIAL" ] || { echo "::error::XML ufficiale cambiato: mi fermo"; exit 1; }
+          # --- overlay generato qui ---
+          pip install --quiet cryptography
+          mkdir -p overlay/RetroRewind6/Binaries overlay/riivolution
+          cp RetroRewind6/Binaries/Code.pul overlay/RetroRewind6/Binaries/Code.pul.ufficiale
+          cp RetroRewind6/Binaries/Code.pul overlay/RetroRewind6/Binaries/Code.pul.pierwfc
+          python3 ../tools/pierwfc/patch_code_pul.py overlay/RetroRewind6/Binaries/Code.pul.pierwfc q7x.duckdns.org ../tools/pierwfc/pierwfc-public-key.pem
+          cp riivolution/RetroRewind6.xml overlay/riivolution/RetroRewind6.xml
+          patch overlay/riivolution/RetroRewind6.xml < ../tools/ww-overlay-test/xml-only.diff
+          rm -f overlay/riivolution/*.orig overlay/riivolution/*.rej
+          H1=$(sha256sum overlay/RetroRewind6/Binaries/Code.pul.pierwfc | cut -d' ' -f1)
+          H2=$(sha256sum overlay/riivolution/RetroRewind6.xml | cut -d' ' -f1)
+          H3=$(sha256sum overlay/RetroRewind6/Binaries/Code.pul.ufficiale | cut -d' ' -f1)
+          { echo "overlay Code.pul.pierwfc $H1 (atteso $EXP_CODE_PUL_PIERWFC)"; echo "overlay xml $H2 (atteso $EXP_XML_OVERLAY)"; echo "overlay Code.pul.ufficiale $H3"; } | tee ../shots/overlay-hashes.txt
+          [ "$H1" = "$EXP_CODE_PUL_PIERWFC" ] && [ "$H2" = "$EXP_XML_OVERLAY" ] && [ "$H3" = "$EXP_CODE_PUL_OFFICIAL" ] || { echo "::error::overlay generato diverso dal pacchetto #1333 verificato: mi fermo"; exit 1; }
+          # --- cartelle Load: A = ufficiale, B = ufficiale + overlay ---
+          mkdir -p A_ufficiale/Load/Riivolution/WheelWizard B_overlay/Load/Riivolution/WheelWizard
+          cp -al RetroRewind6 A_ufficiale/Load/Riivolution/WheelWizard/RetroRewind6
+          mkdir -p A_ufficiale/Load/Riivolution/WheelWizard/riivolution && cp riivolution/RetroRewind6.xml A_ufficiale/Load/Riivolution/WheelWizard/riivolution/
+          cp -al RetroRewind6 B_overlay/Load/Riivolution/WheelWizard/RetroRewind6
+          mkdir -p B_overlay/Load/Riivolution/WheelWizard/riivolution
+          cp --remove-destination overlay/riivolution/RetroRewind6.xml B_overlay/Load/Riivolution/WheelWizard/riivolution/RetroRewind6.xml
+          cp --remove-destination overlay/RetroRewind6/Binaries/Code.pul.pierwfc overlay/RetroRewind6/Binaries/Code.pul.ufficiale B_overlay/Load/Riivolution/WheelWizard/RetroRewind6/Binaries/
+          rm -rf overlay
+          df -h . | tail -1
+
+      - name: Dolphin con RR.json replicato (NON il launcher WW) - variante ufficiale e variante overlay
+        shell: bash
+        run: |
+          set -x
+          S="${{ inputs.seconds }}"; S="${S:-300}"
+          mkdir -p repo; cp -r tools repo/tools
+          for V in A_ufficiale B_overlay; do
+            docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-variant.sh "$V" "$S" || echo "variante $V terminata con errore $?"
+          done
+
+      - name: Vero Wheel Wizard (esplorativo)
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p repo; cp -r tools repo/tools
+          docker run --rm --shm-size=2g -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash -c 'mkdir -p /work; cp /work/repo/tools/ww-overlay-test/ww-discovery.sh /tmp/; bash /tmp/ww-discovery.sh'
+
+      - name: Pulizia artifact (solo screenshot e log filtrati, niente dump)
+        if: always()
+        run: |
+          find shots -type f \( -name '*.log' -o -name '*.txt' -o -name '*.png' -o -name '*.json' \) | head -300 > /tmp/keep.txt || true
+          rm -f work/base.iso
+          du -sh shots
+
+      - name: Carica risultati
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-overlay-test
+          retention-days: 3
+          path: |
+            shots

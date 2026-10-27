@@ -1,0 +1,28 @@
+--- official-6.13.4/RetroRewind6.xml
++++ PierWFC/RetroRewind6.xml
+@@ -24,6 +24,14 @@
+ 			<option name="Seperate Savegame">
+ 				<choice name="Enabled">
+ 					<patch id="RRSave"/>
++				</choice>
++			</option>
++			<option name="Server" default="2">
++				<choice name="Ufficiale">
++					<patch id="RRServerUfficiale" />
++				</choice>
++				<choice name="PierWFC">
++					<patch id="RRServerPierWFC" />
+ 				</choice>
+ 			</option>
+ 		</section>
+@@ -238,4 +246,10 @@
+ 	<patch id="RRSave">
+ 	    <savegame clone="false" external="/riivolution/save/RetroWFC2/{$__gameid}{$__region}"/>
+ 	</patch>
++<patch id="RRServerUfficiale">
++		<file disc="/Binaries/Code.pul" external="/RetroRewind6/Binaries/Code.pul.ufficiale" create="true" />
++	</patch>
++<patch id="RRServerPierWFC">
++		<file disc="/Binaries/Code.pul" external="/RetroRewind6/Binaries/Code.pul.pierwfc" create="true" />
++	</patch>
+ </wiidisc>
