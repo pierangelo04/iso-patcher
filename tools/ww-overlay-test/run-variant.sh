@@ -67,6 +67,10 @@ Xvfb :99 -screen 0 1280x800x24 &
 sleep 3; openbox >/dev/null 2>&1 & sleep 2
 for h in q7x.duckdns.org nas.q7x.duckdns.org gpcm.q7x.duckdns.org nas.wiimmfi.de nas.rwfc.net; do echo "DNS $h: $(getent hosts $h | head -1)"; done | tee "$OUT/dns.txt"
 (timeout $((SECS+120)) tcpdump -l -nn -i any "port 53 or host 95.135.208.187" > "$W/net.txt" 2>&1 &)
+# Tutte le nuove connessioni TCP (SYN) e tutto il DNS, senza payload
+(timeout $((SECS+120)) tcpdump -l -nn -i any "udp port 53 or (tcp[tcpflags] & tcp-syn != 0)" > "$W/syn.txt" 2>&1 &)
+# Solo riga di richiesta/stato HTTP e Host sulla porta 80 (nessun corpo, nessun cookie)
+(timeout $((SECS+120)) tcpdump -l -nn -i any -A -s 900 "tcp port 80" 2>/dev/null | grep -a -E '^(GET|POST|HEAD) |^HTTP/1|^Host:' | cut -c1-90 > "$W/http.txt" &)
 dolphin-emu -u "$W/user" -b -v Vulkan -e "$W/RR.json" --config=Dolphin.Core.EnableCheats=False --config=Achievements.Achievements.Enabled=False > "$W/dolphin.log" 2>&1 &
 DP=$!
 # Controllo precoce: dopo 75s, se compare un dialogo di errore (file mancante ecc.) o non c'e' processo, esci subito.
@@ -81,6 +85,9 @@ grep -a -i -E 'riivolution|patch|descriptor|wfc|rwfc|q7x|duckdns|dns|IOS_NET|SSL
 wc -l "$W/dolphin.log" > "$OUT/dolphin-lines.txt"
 grep -a -E 'q7x|rwfc|wiimmfi|95\.135\.208\.187|\.duckdns' "$W/net.txt" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8}' | head -80 > "$OUT/net-filtered.txt"
 grep -a -c . "$W/net.txt" > "$OUT/net-lines.txt"
+grep -a -v -E '^\s*$' "$W/syn.txt" | grep -a -E 'Flags \[S\]|\[S\.\]|A\?|A [0-9]|CNAME' | grep -a -v -E ' > 172\.17\.0\.2\.[0-9]+: [0-9]+ [0-9]' | cut -c1-200 | head -300 > "$OUT/syn-dns.txt"
+sed -E 's#(POST|GET) (/[^ ?]{0,60})[^ ]*#\1 \2#' "$W/http.txt" | sort | uniq -c | sort -rn | head -60 > "$OUT/http-summary.txt"
+grep -a -o -E 'IOCTL_SO_GETHOSTBYNAME Address: [^,]+|IOCTL_SO_CONNECT \([0-9a-f]+, [0-9.:]+\) = [-0-9]+' "$W/dolphin.log" | sort | uniq -c | sort -rn | head -80 > "$OUT/sockets-all.txt"
 find "$W/user/Config" -name "WiimoteNew.ini" -exec grep -a -E "^\[Wiimote1\]|Source|^Buttons/A|^D-Pad|^IR/|Extension" {} \; > "$OUT/wiimote-profile.txt" 2>&1
 # Cosa ha caricato Dolphin: nome del file Code.pul effettivamente letto non e' visibile; segnala presenza strutture
 ls -la "$ROOT/riivolution" "$ROOT/RetroRewind6/Binaries" > "$OUT/tree-binaries.txt" 2>&1
