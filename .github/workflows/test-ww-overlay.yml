@@ -128,7 +128,7 @@ jobs:
           df -h . | tail -1
 
       - name: Dolphin con RR.json replicato (NON il launcher WW) - variante ufficiale e variante overlay
-        if: ${{ inputs.only != 'B' }}
+        if: ${{ inputs.only != 'B' && inputs.only != 'WW' }}
         shell: bash
         run: |
           set -x
@@ -147,7 +147,7 @@ jobs:
           path: shots/A_ufficiale
 
       - name: Dolphin B overlay
-        if: ${{ inputs.only != 'A' }}
+        if: ${{ inputs.only != 'A' && inputs.only != 'WW' }}
         shell: bash
         run: |
           S="${{ inputs.seconds }}"; S="${S:-300}"
@@ -164,12 +164,29 @@ jobs:
           path: shots/B_overlay
 
       - name: Vero Wheel Wizard (esplorativo)
-        if: ${{ inputs.only != 'A' }}
+        if: ${{ inputs.only != 'A' && inputs.only != 'WW' }}
         continue-on-error: true
         shell: bash
         run: |
           mkdir -p repo; cp -r tools repo/tools
           docker run --rm --shm-size=2g -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash -c 'mkdir -p /work; cp /work/repo/tools/ww-overlay-test/ww-discovery.sh /tmp/; bash /tmp/ww-discovery.sh'
+
+      - name: VERO Wheel Wizard 2.6.4 (launcher) con overlay B
+        if: ${{ inputs.only == 'WW' }}
+        shell: bash
+        run: |
+          S="${{ inputs.seconds }}"; S="${S:-300}"
+          V=B_overlay
+          mkdir -p repo shots; [ -d repo/tools ] || cp -r tools repo/tools
+          docker run --rm --shm-size=4g -v "$PWD/work/$V":/work/$V -v "$PWD/work/base.iso":/work/base.iso:ro -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/run-ww-launcher.sh "$V" "$S" || echo "WW errore $?"
+
+      - name: Carica WW (subito)
+        if: ${{ always() && inputs.only == 'WW' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ww-WW
+          retention-days: 3
+          path: shots/B_overlay
 
       - name: Pulizia artifact (solo screenshot e log filtrati, niente dump)
         if: always()
