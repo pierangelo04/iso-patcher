@@ -1,0 +1,30 @@
+name: Esplora Wheel Wizard UI e diagnostica Dolphin (senza ISO)
+# Solo branch ww-overlay-test. Nessuna ISO, nessun secret. Artifact: screenshot e log brevi.
+on:
+  push:
+    branches: [ww-overlay-test]
+    paths: [".github/workflows/test-ww-ui.yml", "tools/ww-overlay-test/diag-dolphin.sh", "tools/ww-overlay-test/ui-actions.sh"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnostica Dolphin
+        continue-on-error: true
+        run: |
+          mkdir -p shots repo; cp -r tools repo/tools
+          docker run --rm -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/diag-dolphin.sh
+      - name: Wheel Wizard UI
+        continue-on-error: true
+        run: |
+          docker run --rm --shm-size=2g -v "$PWD/repo":/work/repo:ro -v "$PWD/shots":/work/shots ubuntu:26.04 bash /work/repo/tools/ww-overlay-test/ui-actions.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ww-ui
+          retention-days: 3
+          path: shots
