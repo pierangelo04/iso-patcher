@@ -133,7 +133,6 @@ jobs:
                   else: continue
                   break
           PYEOF
-          sed -i 's/^          //' $W/drive.py
           sleep 60; xdotool mousemove 516 587 click 1 || true; sleep 5; xdotool mousemove 516 587 click 1 || true
           python3 $W/drive.py $OUT 120
           tail -c 2500 $OUT/ww-stdout.log | sed 's#/home/[^ ]*#<home>#g' > $OUT/ww-stdout-tail.txt
