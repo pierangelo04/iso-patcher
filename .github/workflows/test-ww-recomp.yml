@@ -26,7 +26,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,14 +90,50 @@ jobs:
           export HOME=$W/home DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy APPIMAGE_EXTRACT_AND_RUN=1 AVALONIA_GLOBAL_SCALE_FACTOR=1
           Xvfb :99 -screen 0 1280x800x24 & sleep 3; openbox >/dev/null 2>&1 & sleep 2
           sudo tcpdump -i any -nn -l 'udp port 53 or (tcp[tcpflags] & tcp-syn != 0)' > net-raw.txt 2>/dev/null &
-          (cd $W/run && timeout 1500 ./WheelWizard_Linux > $OUT/ww-stdout.log 2>&1) &
-          for i in $(seq 1 36); do
-            sleep 25
-            if [ $i -eq 3 ] || [ $i -eq 4 ]; then xdotool mousemove 516 587 click 1 2>/dev/null || true; fi
-            import -window root $OUT/s-$(printf %02d $i).png 2>/dev/null || true
-            convert $OUT/s-$(printf %02d $i).png -resize 200% /tmp/o.png 2>/dev/null && tesseract /tmp/o.png - --psm 11 2>/dev/null | grep -a -v '^\s*$' | head -25 | sed "s/^/[$i] /" >> $OUT/ocr.txt
-            xdotool search --onlyvisible --name . getwindowname %@ 2>/dev/null | sort -u | sed "s/^/[$i] WIN /" >> $OUT/ocr.txt
-          done
+          (cd $W/run && timeout 3000 ./WheelWizard_Linux > $OUT/ww-stdout.log 2>&1) &
+          cat > $W/drive.py <<'PYEOF'
+          import subprocess as sp, time, os, re, sys
+          OUT=sys.argv[1]; N=int(sys.argv[2])
+          def run(c): return sp.run(c,shell=True,text=True,stdout=sp.PIPE,stderr=sp.STDOUT).stdout
+          clicks={}
+          # (frase da cercare, max click, parole da non cliccare)
+          RULES=[("make a copy",2),("install",3),("continue",3),("yes",2),("ok",2),("play",3),("launch",3)]
+          log=open(OUT+"/driver.log","a")
+          last=0
+          for i in range(1,N+1):
+              time.sleep(20)
+              p=f"{OUT}/s-{i:03d}.png"
+              run(f"import -window root {p}")
+              run(f"convert {p} -resize 200% /tmp/o.png")
+              tsv=run("tesseract /tmp/o.png - --psm 11 tsv 2>/dev/null").splitlines()
+              words=[]
+              for l in tsv[1:]:
+                  f=l.split("\t")
+                  if len(f)>=12 and f[11].strip() and float(f[10])>50:
+                      words.append((f[11].strip().lower().strip(".,:!"),int(f[6])//2,int(f[7])//2,int(f[8])//2,int(f[9])//2))
+              txt=" ".join(w[0] for w in words)
+              procs=run("ps -eo comm,args | grep -i -E 'wiicompiled|RetroRewind|mkw|Wheel' | grep -v grep | cut -c1-80 | head -4").replace(chr(10)," | ")
+              log.write(f"[{i}] words={len(words)} procs={procs} text={txt[:200]}\n"); log.flush()
+              if time.time()-last<40: continue
+              for key,mx in RULES:
+                  if clicks.get(key,0)>=mx: continue
+                  keys=key.split()
+                  for j,w in enumerate(words):
+                      if w[0]==keys[0] and all(j+k<len(words) and words[j+k][0]==keys[k] for k in range(len(keys))):
+                          # non cliccare "install offline-only", "use directly", "share"
+                          nxt=words[j+1][0] if j+1<len(words) else ""
+                          if key=="install" and nxt=="offline-only": continue
+                          if key=="install" and w[2]<150: continue
+                          cx=w[1]+w[3]//2; cy=w[2]+w[4]//2
+                          run(f"xdotool mousemove {cx} {cy} click 1")
+                          clicks[key]=clicks.get(key,0)+1; last=time.time()
+                          log.write(f"  CLICK {key} at {cx},{cy}\n"); log.flush(); break
+                  else: continue
+                  break
+          PYEOF
+          sed -i 's/^          //' $W/drive.py
+          sleep 60; xdotool mousemove 516 587 click 1 || true; sleep 5; xdotool mousemove 516 587 click 1 || true
+          python3 $W/drive.py $OUT 120
           tail -c 2500 $OUT/ww-stdout.log | sed 's#/home/[^ ]*#<home>#g' > $OUT/ww-stdout-tail.txt
           sudo pkill tcpdump || true
           { echo "== DNS"; grep -a -o 'A? [A-Za-z0-9._-]*' net-raw.txt | awk '{print $2}' | sort | uniq -c | sort -rn | grep -v githubapp | head -30; echo "== processi"; ps aux | grep -i -E 'wiicompiled|RetroRewind|Wheel' | grep -v grep | awk '{print $11,$12}' | head; } | tee $OUT/net-summary.txt
