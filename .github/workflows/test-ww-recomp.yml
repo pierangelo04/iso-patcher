@@ -97,7 +97,8 @@ jobs:
           def run(c): return sp.run(c,shell=True,text=True,stdout=sp.PIPE,stderr=sp.STDOUT).stdout
           clicks={}
           # (frase da cercare, max click, parole da non cliccare)
-          RULES=[("make a copy",2),("install",3),("continue",3),("yes",2),("ok",2),("play",3),("launch",3)]
+          # Solo clic noti: (parola, max click, frase di contesto richiesta nel testo OCR). Nessun Yes/OK/Continue generico.
+          RULES=[("install",2,"wiicompiled"),("make a copy",1,"copy your dolphin data"),("play",3,"wiicompiled")]
           log=open(OUT+"/driver.log","a")
           last=0
           for i in range(1,N+1):
@@ -115,7 +116,8 @@ jobs:
               procs=run("ps -eo comm,args | grep -i -E 'wiicompiled|RetroRewind|mkw|Wheel' | grep -v grep | cut -c1-80 | head -4").replace(chr(10)," | ")
               log.write(f"[{i}] words={len(words)} procs={procs} text={txt[:200]}\n"); log.flush()
               if time.time()-last<40: continue
-              for key,mx in RULES:
+              for key,mx,ctx in RULES:
+                  if ctx not in txt: continue
                   if clicks.get(key,0)>=mx: continue
                   keys=key.split()
                   for j,w in enumerate(words):
@@ -125,9 +127,9 @@ jobs:
                           if key=="install" and nxt=="offline-only": continue
                           if key=="install" and w[2]<150: continue
                           cx=w[1]+w[3]//2; cy=w[2]+w[4]//2
-                          run(f"xdotool mousemove {cx} {cy} click 1")
+                          run(f"cp {p} {OUT}/before-{i:03d}-{key.replace(chr(32),chr(95))}.png"); run(f"xdotool mousemove {cx} {cy} click 1"); time.sleep(3)
                           clicks[key]=clicks.get(key,0)+1; last=time.time()
-                          log.write(f"  CLICK {key} at {cx},{cy}\n"); log.flush(); break
+                          run(f"import -window root {OUT}/after-{i:03d}-{key.replace(chr(32),chr(95))}.png"); log.write(f"  CLICK {key} at {cx},{cy}\n"); log.flush(); break
                   else: continue
                   break
           PYEOF
