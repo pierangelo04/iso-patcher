@@ -79,7 +79,7 @@ jobs:
             "UserFolderPath": "$W/user",
             "GameLocation": "$W/base.iso",
             "EnableRecomp": true,
-            "LaunchRrOnStartup": true,
+            "LaunchRrOnStartup": false,
             "ForceWiimote": false
           }
           CFG
@@ -113,7 +113,9 @@ jobs:
           def click(p,tag,x,y):
               run(f"cp {p} {OUT}/before-{tag}.png"); run(f"xdotool mousemove {x} {y} click 1"); time.sleep(4)
               run(f"import -window root {OUT}/after-{tag}.png")
-              log.write(f"  CLICK {tag} at {x},{y}\n"); log.flush()
+              d=run(f"compare -metric AE -fuzz 3% {OUT}/before-{tag}.png {OUT}/after-{tag}.png null: 2>&1").strip().split()[0]
+              log.write(f"  CLICK {tag} at {x},{y} pixels_changed_after_click={d}\n"); log.flush()
+              return d
           log=open(OUT+"/driver.log","a")
           done={"install":0,"play":0,"copy":0}
           for i in range(1,N+1):
@@ -121,11 +123,16 @@ jobs:
               p=f"{OUT}/s-{i:03d}.png"
               run(f"import -window root {p}")
               lab=label(p)
+              if i==6 and done["install"]==0 and not ("play" in lab or "launch" in lab):
+                  log.write("STOP: no Install/Play button recognised after 6 reads, diagnostic screenshots kept\n"); log.flush(); break
               procs=run("ps -eo args | grep -i -E 'wiicompiled|RetroRewind|Wheel' | grep -v grep | cut -c1-70 | head -4").replace(chr(10)," | ")
               w=words(p); txt=" ".join(x[0] for x in w)
               log.write(f"[{i}] label={lab!r} procs={procs} text={txt[:220]}\n"); log.flush()
               if "install" in lab and "offline" not in lab and done["install"]<1:
-                  done["install"]+=1; click(p,f"{i:03d}-install",740,573); continue
+                  done["install"]+=1; d=click(p,f"{i:03d}-install",740,573)
+                  if d.isdigit() and int(d)<2000:
+                      log.write("STOP: UI did not change after Install click\n"); log.flush(); break
+                  continue
               if ("play" in lab or "launch" in lab) and done["play"]<2:
                   done["play"]+=1; click(p,f"{i:03d}-play",740,573); continue
               if "copy your dolphin data" in txt and done["copy"]<1:
