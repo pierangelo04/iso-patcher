@@ -84,6 +84,7 @@ jobs:
           }
           CFG
           sed -i 's/^          //' $W/run/CT-MKWII/config.json
+          RH=$(getent passwd $(id -un) | cut -d: -f6); mkdir -p $RH/.config/CT-MKWII; cp $W/run/CT-MKWII/config.json $RH/.config/CT-MKWII/config.json
           curl -fsSL -o $W/run/WheelWizard_Linux https://github.com/TeamWheelWizard/WheelWizard/releases/download/v2.6.4/WheelWizard_Linux; chmod +x $W/run/WheelWizard_Linux
           sha256sum $W/run/WheelWizard_Linux | cut -c1-64 | tee $OUT/ww-sha256.txt
           export HOME=$W/home DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy APPIMAGE_EXTRACT_AND_RUN=1 AVALONIA_GLOBAL_SCALE_FACTOR=1
@@ -92,6 +93,7 @@ jobs:
           (cd $W/run && timeout 1500 ./WheelWizard_Linux > $OUT/ww-stdout.log 2>&1) &
           for i in $(seq 1 36); do
             sleep 25
+            if [ $i -eq 3 ] || [ $i -eq 4 ]; then xdotool mousemove 516 587 click 1 2>/dev/null || true; fi
             import -window root $OUT/s-$(printf %02d $i).png 2>/dev/null || true
             convert $OUT/s-$(printf %02d $i).png -resize 200% /tmp/o.png 2>/dev/null && tesseract /tmp/o.png - --psm 11 2>/dev/null | grep -a -v '^\s*$' | head -25 | sed "s/^/[$i] /" >> $OUT/ocr.txt
             xdotool search --onlyvisible --name . getwindowname %@ 2>/dev/null | sort -u | sed "s/^/[$i] WIN /" >> $OUT/ocr.txt
