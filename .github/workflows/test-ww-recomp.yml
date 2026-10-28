@@ -92,49 +92,49 @@ jobs:
           sudo tcpdump -i any -nn -l 'udp port 53 or (tcp[tcpflags] & tcp-syn != 0)' > net-raw.txt 2>/dev/null &
           (cd $W/run && timeout 3000 ./WheelWizard_Linux > $OUT/ww-stdout.log 2>&1) &
           cat > $W/drive.py <<'PYEOF'
-          import subprocess as sp, time, os, re, sys
+          import subprocess as sp, time, sys
           OUT=sys.argv[1]; N=int(sys.argv[2])
           def run(c): return sp.run(c,shell=True,text=True,stdout=sp.PIPE,stderr=sp.STDOUT).stdout
-          clicks={}
-          # (frase da cercare, max click, parole da non cliccare)
-          # Solo clic noti: (parola, max click, frase di contesto richiesta nel testo OCR). Nessun Yes/OK/Continue generico.
-          RULES=[("install",2,"wiicompiled"),("make a copy",1,"copy your dolphin data"),("play",3,"wiicompiled")]
+          def label(p):
+              run(f"convert {p} -crop 220x50+630+550 +repage -colorspace Gray -resize 300% /tmp/b.png")
+              return run("tesseract /tmp/b.png - --psm 7 2>/dev/null").strip().lower()
+          def words(p):
+              out=[]
+              for pre,sc in (("-resize 200%",2),("-colorspace Gray -negate -resize 300% -threshold 55%",3)):
+                  run(f"convert {p} {pre} /tmp/o.png")
+                  for l in run("tesseract /tmp/o.png - --psm 11 tsv 2>/dev/null").splitlines()[1:]:
+                      f=l.split("\t")
+                      try:
+                          if len(f)>=12 and f[11].strip() and float(f[10])>40:
+                              out.append((f[11].strip().lower().strip(".,:!?"),int(f[6])//sc,int(f[7])//sc,int(f[8])//sc,int(f[9])//sc))
+                      except ValueError:
+                          pass
+              return out
+          def click(p,tag,x,y):
+              run(f"cp {p} {OUT}/before-{tag}.png"); run(f"xdotool mousemove {x} {y} click 1"); time.sleep(4)
+              run(f"import -window root {OUT}/after-{tag}.png")
+              log.write(f"  CLICK {tag} at {x},{y}\n"); log.flush()
           log=open(OUT+"/driver.log","a")
-          last=0
+          done={"install":0,"play":0,"copy":0}
           for i in range(1,N+1):
               time.sleep(20)
               p=f"{OUT}/s-{i:03d}.png"
               run(f"import -window root {p}")
-              run(f"convert {p} -resize 200% /tmp/o.png")
-              tsv=run("tesseract /tmp/o.png - --psm 11 tsv 2>/dev/null").splitlines()
-              words=[]
-              for l in tsv[1:]:
-                  f=l.split("\t")
-                  if len(f)>=12 and f[11].strip() and float(f[10])>50:
-                      words.append((f[11].strip().lower().strip(".,:!"),int(f[6])//2,int(f[7])//2,int(f[8])//2,int(f[9])//2))
-              txt=" ".join(w[0] for w in words)
-              procs=run("ps -eo comm,args | grep -i -E 'wiicompiled|RetroRewind|mkw|Wheel' | grep -v grep | cut -c1-80 | head -4").replace(chr(10)," | ")
-              log.write(f"[{i}] words={len(words)} procs={procs} text={txt[:200]}\n"); log.flush()
-              if time.time()-last<40: continue
-              for key,mx,ctx in RULES:
-                  if ctx not in txt: continue
-                  if clicks.get(key,0)>=mx: continue
-                  keys=key.split()
-                  for j,w in enumerate(words):
-                      if w[0]==keys[0] and all(j+k<len(words) and words[j+k][0]==keys[k] for k in range(len(keys))):
-                          # non cliccare "install offline-only", "use directly", "share"
-                          nxt=words[j+1][0] if j+1<len(words) else ""
-                          if key=="install" and nxt=="offline-only": continue
-                          if key=="install" and w[2]<150: continue
-                          cx=w[1]+w[3]//2; cy=w[2]+w[4]//2
-                          run(f"cp {p} {OUT}/before-{i:03d}-{key.replace(chr(32),chr(95))}.png"); run(f"xdotool mousemove {cx} {cy} click 1"); time.sleep(3)
-                          clicks[key]=clicks.get(key,0)+1; last=time.time()
-                          run(f"import -window root {OUT}/after-{i:03d}-{key.replace(chr(32),chr(95))}.png"); log.write(f"  CLICK {key} at {cx},{cy}\n"); log.flush(); break
-                  else: continue
-                  break
+              lab=label(p)
+              procs=run("ps -eo args | grep -i -E 'wiicompiled|RetroRewind|Wheel' | grep -v grep | cut -c1-70 | head -4").replace(chr(10)," | ")
+              w=words(p); txt=" ".join(x[0] for x in w)
+              log.write(f"[{i}] label={lab!r} procs={procs} text={txt[:220]}\n"); log.flush()
+              if "install" in lab and "offline" not in lab and done["install"]<1:
+                  done["install"]+=1; click(p,f"{i:03d}-install",740,573); continue
+              if ("play" in lab or "launch" in lab) and done["play"]<2:
+                  done["play"]+=1; click(p,f"{i:03d}-play",740,573); continue
+              if "copy your dolphin data" in txt and done["copy"]<1:
+                  for j,x in enumerate(w):
+                      if x[0]=="make" and j+2<len(w) and w[j+1][0]=="a" and w[j+2][0].startswith("copy"):
+                          done["copy"]+=1; click(p,f"{i:03d}-makecopy",x[1]+30,x[2]+x[4]//2); break
           PYEOF
           sleep 60; xdotool mousemove 516 587 click 1 || true; sleep 5; xdotool mousemove 516 587 click 1 || true
-          python3 $W/drive.py $OUT 120
+          python3 $W/drive.py $OUT 125
           tail -c 2500 $OUT/ww-stdout.log | sed 's#/home/[^ ]*#<home>#g' > $OUT/ww-stdout-tail.txt
           sudo pkill tcpdump || true
           { echo "== DNS"; grep -a -o 'A? [A-Za-z0-9._-]*' net-raw.txt | awk '{print $2}' | sort | uniq -c | sort -rn | grep -v githubapp | head -30; echo "== processi"; ps aux | grep -i -E 'wiicompiled|RetroRewind|Wheel' | grep -v grep | awk '{print $11,$12}' | head; } | tee $OUT/net-summary.txt
