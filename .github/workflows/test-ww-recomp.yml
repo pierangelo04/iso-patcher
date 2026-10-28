@@ -98,6 +98,11 @@ jobs:
           def label(p):
               run(f"convert {p} -crop 220x50+630+550 +repage -colorspace Gray -resize 300% /tmp/b.png")
               return run("tesseract /tmp/b.png - --psm 7 2>/dev/null").strip().lower()
+          def playstate(p):
+              v=run(f"convert {p} -crop 1x1+700+573 +repage -format '%[fx:int(255*r)] %[fx:int(255*g)] %[fx:int(255*b)]' info:").split()
+              try: r,g,b=[int(x) for x in v[-3:]]
+              except Exception: return False
+              return r<60 and g>180 and b>140
           def words(p):
               out=[]
               for pre,sc in (("-resize 200%",2),("-colorspace Gray -negate -resize 300% -threshold 55%",3)):
@@ -118,6 +123,7 @@ jobs:
               return d
           log=open(OUT+"/driver.log","a")
           done={"install":0,"play":0,"copy":0}
+          played_at=0
           for i in range(1,N+1):
               time.sleep(20)
               p=f"{OUT}/s-{i:03d}.png"
@@ -125,7 +131,7 @@ jobs:
               lab=label(p)
               if i==6 and done["install"]==0 and not ("play" in lab or "launch" in lab):
                   log.write("STOP: no Install/Play button recognised after 6 reads, diagnostic screenshots kept\n"); log.flush(); break
-              procs=run("ps -eo args | grep -i -E 'wiicompiled|RetroRewind|Wheel' | grep -v grep | cut -c1-70 | head -4").replace(chr(10)," | ")
+              procs=run("ps -eo args | grep -i -E 'wiicompiled|RetroRewind|Wheel|mkw' | grep -v grep | cut -c1-90 | head -6").replace(chr(10)," | ")
               w=words(p); txt=" ".join(x[0] for x in w)
               log.write(f"[{i}] label={lab!r} procs={procs} text={txt[:220]}\n"); log.flush()
               if "install" in lab and "offline" not in lab and done["install"]<1:
@@ -133,8 +139,10 @@ jobs:
                   if d.isdigit() and int(d)<2000:
                       log.write("STOP: UI did not change after Install click\n"); log.flush(); break
                   continue
-              if ("play" in lab or "launch" in lab) and done["play"]<2:
-                  done["play"]+=1; click(p,f"{i:03d}-play",740,573); continue
+              if (playstate(p) or "play" in lab) and done["play"]<1:
+                  done["play"]+=1; click(p,f"{i:03d}-play",740,573); played_at=i; continue
+              if played_at and i-played_at>=40:
+                  log.write("STOP: 40 reads after Play\n"); log.flush(); break
               if "copy your dolphin data" in txt and done["copy"]<1:
                   for j,x in enumerate(w):
                       if x[0]=="make" and j+2<len(w) and w[j+1][0]=="a" and w[j+2][0].startswith("copy"):
