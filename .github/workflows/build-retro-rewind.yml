@@ -82,7 +82,7 @@ env:
   # "Retro Rewind ISO Builder/Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above.zip".
   BUILDER_MEGA_LINK: https://mega.nz/folder/yW40yJqI#l9RG4RsVWRSwoAVyXpqr4w
   # il nome cambia a ogni aggiornamento upstream (es. "... and above fixed3.zip"): cerca per pattern
-  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition for v6.13.0 and above*.zip
+  BUILDER_ZIP: Retro Rewind ISO Builder Wiimm Edition*.zip
   BUILDER_SUBDIR: Retro Rewind ISO Builder
   # md5 del main.dol EUR VECCHIO (GitHub 05/2026, Kamek v1): se il builder
   # scaricato lo contiene ancora, la build deve fallire invece di produrre
