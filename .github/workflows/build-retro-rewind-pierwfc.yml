@@ -61,7 +61,7 @@ jobs:
             source /etc/os-release
             DEB="megacmd-xUbuntu_${VERSION_ID}_amd64.deb"
             wget -q "https://mega.nz/linux/repo/xUbuntu_${VERSION_ID}/amd64/${DEB}" -O "/tmp/${DEB}"
-            sudo apt install -y "/tmp/${DEB}"
+            sudo apt-get update && sudo apt install -y "/tmp/${DEB}"
           fi
           mega-get --version 2>&1 | head -n2 || true
 
