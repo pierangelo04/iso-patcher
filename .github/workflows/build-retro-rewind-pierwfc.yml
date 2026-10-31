@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     timeout-minutes: 360
     outputs:
       download_url: ${{ steps.drive.outputs.download_url }}
