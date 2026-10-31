@@ -106,7 +106,7 @@ env:
 
 jobs:
   check:
-    runs-on: instabox-large
+    runs-on: instabox-medium
     outputs:
       rebuild: ${{ steps.check.outputs.rebuild }}
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
@@ -216,7 +216,7 @@ jobs:
   build:
     needs: check
     if: needs.check.outputs.rebuild == 'true' && github.event.inputs.test_whatsapp != 'true'
-    runs-on: instabox-large
+    runs-on: instabox-medium
     timeout-minutes: 360
     outputs:
       download_url: ${{ steps.drive.outputs.download_url }}
@@ -538,7 +538,7 @@ jobs:
     # NESSUNA credenziale nel repo.
     needs: [check, build]
     if: always() && (needs.build.result == 'success' || github.event.inputs.test_whatsapp == 'true')
-    runs-on: instabox-large
+    runs-on: instabox-medium
     timeout-minutes: 30
     concurrency:
       group: openwa-notify
